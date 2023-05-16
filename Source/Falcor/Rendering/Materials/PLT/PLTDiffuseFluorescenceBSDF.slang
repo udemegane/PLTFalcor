@@ -14,6 +14,12 @@ import Utils.Color.SpectrumUtils;
 struct PLTDiffuseFluorescenceBxDF
 {
     float3 albedo;
+    float3 albedoFluorescence;
+    float q;
+    float c;
+
+    static const float spectraAbsorption[100];
+
 
     void eval(
         const float3 toLight,
@@ -26,12 +32,16 @@ struct PLTDiffuseFluorescenceBxDF
         const bool valid = (lobe & (uint)LobeType::DiffuseReflection) != 0;
 
         const hwss_t colour = SpectrumUtils.rgbToSpectrum(albedo, beam.wavelengths);
-        const hwss_t w = valid ? abs(toLight.z) * M_1_PI * colour : hwss_t(.0f);
+        const hwss_t colourFluorescence = SpectrumUtils.rgbToSpectrum(albedoFluorescence, transitWavelenghts(beam.wavelengths));
+        const float a = getFluorescencePower();
+        const hwss_t w = valid ? abs(toLight.z) * M_1_PI * (((1.0f-c*a)*colour)+(c*a*q*colourFluorescence)) : hwss_t(.0f);
 
         beam.L *= w;
         // Depolarize (ideal diffuse interaction)
         beam.L1 = beam.L2 = beam.L3 = .0f;
     }
+
+
 
     bool sample<S : ISampleGenerator>(
         float3 wiLocal,
@@ -46,7 +56,10 @@ struct PLTDiffuseFluorescenceBxDF
     {
         const bool hasDiffuseReflection = (lobeMask & (uint)LobeType::DiffuseReflection) != 0;
 
-        weight = SpectrumUtils.rgbToSpectrum(albedo, wavelength);
+        const float colour = SpectrumUtils.rgbToSpectrum(albedo, wavelength);
+        const float colourFluorescence = SpectrumUtils.rgbToSpectrum(albedoFluorescence, transitWavelength(wavelength));
+        const float a = getFluorescencePower();
+        weight =  SpectrumUtils.rgbToSpectrum(albedoFluorescence, wavelength+250.0f);//((1.0f-c*a)*colour)+(c*a*q*colourFluorescence);
         wo = sample_cosine_hemisphere_concentric(sampleNext2D(sg), pdf);
         lobe = (uint)LobeType::DiffuseReflection;
 
@@ -57,7 +70,13 @@ struct PLTDiffuseFluorescenceBxDF
 
     float weight(const float3 wiLocal, const float3 woLocal, const float wavelength)
     {
-        return SpectrumUtils.rgbToSpectrum(albedo, wavelength);
+        return SpectrumUtils.rgbToSpectrum(albedoFluorescence, wavelength+250.0f);
+        // TODO: this is wrong!!!!!
+        const float colour = SpectrumUtils.rgbToSpectrum(albedo, wavelength);
+        const float colourFluorescence = SpectrumUtils.rgbToSpectrum(albedoFluorescence, transitWavelength(wavelength));
+        const float a = getFluorescencePower();
+
+        return ((1.0f-c*a)*colour)+(c*a*10.0*q*colourFluorescence);
     }
 
     hwss_t lambdaPdf(const float3 toLight, const float3 toEye, const uint lobe, const PLTBeam beam, const hwss_t wavelengths)
@@ -71,6 +90,22 @@ struct PLTDiffuseFluorescenceBxDF
         const float cosTheta = sqrt(max(1e-2f, abs(woLocal.z)));
         return float2x2(cosTheta, .0f, .0f, 1.f / cosTheta);
     }
+
+    // TODO
+    hwss_t transitWavelenghts(hwss_t wavelengths){
+        // hwss_t transited;
+        return  wavelengths+hwss_t(250.0f);
+    }
+    // TODO
+    float transitWavelength(hwss_t wavelength){
+        float transited;
+        return  transited;
+    }
+    // TODO
+    float getFluorescencePower(){
+        return float(1.0f);
+    }
+
 };
 
 struct PLTDiffuseFluorescenceBSDF : IMaterialInstance
@@ -136,6 +171,7 @@ struct PLTDiffuseFluorescenceBSDF : IMaterialInstance
 
     BSDFProperties getProperties(const ShadingData sd)
     {
+        // TODO:?
         const bool isEmissive = emissionSpectralId != BasicMaterialData::no_spectral_profile;
 
         BSDFProperties p = {};
