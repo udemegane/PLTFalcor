@@ -282,6 +282,10 @@ target_sources(Falcor PRIVATE
     Rendering/Materials/PLT/PLTMultiLayeredStackBSDF.slang
     Rendering/Materials/PLT/PLTMultiLayeredStackMaterial.slang
 
+    Rendering/Materials/PLT/PLTDiffuseFluorescenceMaterial.cpp
+    Rendering/Materials/PLT/PLTDiffuseFluorescenceMaterial.h
+    Rendering/Materials/PLT/PLTDiffuseFluorescenceBSDF.slang
+
     Rendering/RTXDI/EnvLightUpdater.cs.slang
     Rendering/RTXDI/LightUpdater.cs.slang
     Rendering/RTXDI/PackedTypes.slang
@@ -681,7 +685,6 @@ target_sources(Falcor PRIVATE
     Utils/Video/VideoEncoderUI.h
 )
 
-
 if(FALCOR_WINDOWS)
     target_sources(Falcor PRIVATE
         Core/Platform/Windows/ProgressBarWin.cpp
@@ -738,115 +741,125 @@ target_copy_shaders(Falcor .)
 
 target_compile_features(Falcor
     PUBLIC
-        cxx_std_17
+    cxx_std_17
     PRIVATE
-        cxx_std_17
+    cxx_std_17
 )
 
 target_compile_options(Falcor
     PUBLIC
-        # MSVC flags.
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zi>      # generate debug symbols
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/WX>      # warnings as errors
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/W3>      # increase warning level
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4819>  # The file contains a character that cannot be represented in the current code page (932)
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/w15038>  # data member 'member1' will be initialized after data member 'member2'
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4251>  # 'type' : class 'type1' needs to have dll-interface to be used by clients of class 'type2'
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4244>  # 'conversion' conversion from 'type1' to 'type2', possible loss of data
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4267>  # 'var' : conversion from 'size_t' to 'type', possible loss of data
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/MP>      # enable multi-processor compilation
-        # Clang flags.
-        $<$<CXX_COMPILER_ID:Clang>:-fms-extensions>     # enable MS extensions (among other things allow glm swizzle to work)
-        $<$<CXX_COMPILER_ID:Clang>:-fvisibility=hidden> # hide symbols by default
-        $<$<CXX_COMPILER_ID:Clang>:-Wall>               # set warning level
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-function>
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-variable>
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-but-set-variable>
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-private-field>
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-switch>
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-missing-braces>
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-braced-scalar-init>
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-invalid-offsetof>
-        $<$<CXX_COMPILER_ID:Clang>:-Wno-self-assign-overloaded>
+
+    # MSVC flags.
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zi> # generate debug symbols
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/WX> # warnings as errors
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/W3> # increase warning level
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4819> # The file contains a character that cannot be represented in the current code page (932)
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/w15038> # data member 'member1' will be initialized after data member 'member2'
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4251> # 'type' : class 'type1' needs to have dll-interface to be used by clients of class 'type2'
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4244> # 'conversion' conversion from 'type1' to 'type2', possible loss of data
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/wd4267> # 'var' : conversion from 'size_t' to 'type', possible loss of data
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/MP> # enable multi-processor compilation
+
+    # Clang flags.
+    $<$<CXX_COMPILER_ID:Clang>:-fms-extensions> # enable MS extensions (among other things allow glm swizzle to work)
+    $<$<CXX_COMPILER_ID:Clang>:-fvisibility=hidden> # hide symbols by default
+    $<$<CXX_COMPILER_ID:Clang>:-Wall> # set warning level
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-function>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-variable>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-but-set-variable>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-private-field>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-switch>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-missing-braces>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-braced-scalar-init>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-invalid-offsetof>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-self-assign-overloaded>
     PRIVATE
-        $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/bigobj>  # big object files
-    )
+    $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/bigobj> # big object files
+)
 
 if(FALCOR_PRECOMPILED_HEADERS)
-target_precompile_headers(Falcor
-    PRIVATE
+    target_precompile_headers(Falcor
+        PRIVATE
         Falcor.h
-)
+    )
 endif()
 
 target_link_options(Falcor
     PUBLIC
-        # MSVC flags.
-        $<$<CXX_COMPILER_ID:MSVC>:/DEBUG>           # generate debug information
+
+    # MSVC flags.
+    $<$<CXX_COMPILER_ID:MSVC>:/DEBUG> # generate debug information
 )
 
 target_compile_definitions(Falcor
     PUBLIC
-        GLM_FORCE_DEPTH_ZERO_TO_ONE
-        $<$<CONFIG:Release>:NDEBUG>
-        $<$<CONFIG:Debug>:_DEBUG>
-        # Windows.
-        $<$<PLATFORM_ID:Windows>:NOMINMAX>  # do not define min/max macros
-        $<$<PLATFORM_ID:Windows>:UNICODE>   # force character map to unicode
-        # MSVC C++ library.
-        $<$<CXX_COMPILER_ID:MSVC>:_USE_MATH_DEFINES>
-        $<$<CXX_COMPILER_ID:MSVC>:_SCL_SECURE_NO_WARNINGS>
-        $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>
-        $<$<CXX_COMPILER_ID:MSVC>:_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING>
-        # Clang.
-        $<$<CXX_COMPILER_ID:Clang>:_MSC_EXTENSIONS> # enable MS extensions
-        # Falcor feature flags.
-        FALCOR_HAS_D3D12=$<BOOL:${FALCOR_HAS_D3D12}>
-        FALCOR_HAS_VULKAN=$<BOOL:${FALCOR_HAS_VULKAN}>
-        FALCOR_HAS_NVAPI=$<BOOL:${FALCOR_HAS_NVAPI}>
-        FALCOR_HAS_CUDA=$<BOOL:${FALCOR_HAS_CUDA}>
-        FALCOR_HAS_D3D12_AGILITY_SDK=$<BOOL:${FALCOR_HAS_D3D12_AGILITY_SDK}>
-        # TODO: RTXDI is always available, we might want to remove the feature flag.
-        FALCOR_HAS_RTXDI=1
+    GLM_FORCE_DEPTH_ZERO_TO_ONE
+    $<$<CONFIG:Release>:NDEBUG>
+    $<$<CONFIG:Debug>:_DEBUG>
+
+    # Windows.
+    $<$<PLATFORM_ID:Windows>:NOMINMAX> # do not define min/max macros
+    $<$<PLATFORM_ID:Windows>:UNICODE> # force character map to unicode
+
+    # MSVC C++ library.
+    $<$<CXX_COMPILER_ID:MSVC>:_USE_MATH_DEFINES>
+    $<$<CXX_COMPILER_ID:MSVC>:_SCL_SECURE_NO_WARNINGS>
+    $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>
+    $<$<CXX_COMPILER_ID:MSVC>:_SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING>
+
+    # Clang.
+    $<$<CXX_COMPILER_ID:Clang>:_MSC_EXTENSIONS> # enable MS extensions
+
+    # Falcor feature flags.
+    FALCOR_HAS_D3D12=$<BOOL:${FALCOR_HAS_D3D12}>
+    FALCOR_HAS_VULKAN=$<BOOL:${FALCOR_HAS_VULKAN}>
+    FALCOR_HAS_NVAPI=$<BOOL:${FALCOR_HAS_NVAPI}>
+    FALCOR_HAS_CUDA=$<BOOL:${FALCOR_HAS_CUDA}>
+    FALCOR_HAS_D3D12_AGILITY_SDK=$<BOOL:${FALCOR_HAS_D3D12_AGILITY_SDK}>
+
+    # TODO: RTXDI is always available, we might want to remove the feature flag.
+    FALCOR_HAS_RTXDI=1
     PRIVATE
-        #$<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
-        _PROJECT_DIR_="${CMAKE_CURRENT_SOURCE_DIR}/"
-        FALCOR_DLL
-        FALCOR_REPORT_EXCEPTION_AS_ERROR=$<BOOL:${FALCOR_REPORT_EXCEPTION_AS_ERROR}>
-        $<$<PLATFORM_ID:Windows>:IMGUI_API=__declspec\(dllexport\)>
-        $<$<PLATFORM_ID:Linux>:IMGUI_API=__attribute__\(\(visibility\("default"\)\)\)>
+
+    # $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+    _PROJECT_DIR_="${CMAKE_CURRENT_SOURCE_DIR}/"
+    FALCOR_DLL
+    FALCOR_REPORT_EXCEPTION_AS_ERROR=$<BOOL:${FALCOR_REPORT_EXCEPTION_AS_ERROR}>
+    $<$<PLATFORM_ID:Windows>:IMGUI_API=__declspec\(dllexport\)>
+    $<$<PLATFORM_ID:Linux>:IMGUI_API=__attribute__\(\(visibility\("default"\)\)\)>
 )
 
 target_link_libraries(Falcor
     PUBLIC
-        fmt pybind11::embed glm Vulkan::Headers
-        slang slang-gfx
-        imgui imgui_addons
-        nanovdb
-        external_includes
-        rtxdi
-        $<$<BOOL:${FALCOR_HAS_CUDA}>:CUDA::cuda_driver>
-        $<$<BOOL:${FALCOR_HAS_CUDA}>:CUDA::cudart_static>
+    fmt pybind11::embed glm Vulkan::Headers
+    slang slang-gfx
+    imgui imgui_addons
+    nanovdb
+    external_includes
+    rtxdi
+    $<$<BOOL:${FALCOR_HAS_CUDA}>:CUDA::cuda_driver>
+    $<$<BOOL:${FALCOR_HAS_CUDA}>:CUDA::cudart_static>
     PRIVATE
-        git_version
-        FreeImage assimp ffmpeg OpenEXR OpenVDB lz4 zlib pugixml
-        glfw mikktspace nvtt
-        $<$<BOOL:${FALCOR_HAS_D3D12}>:d3d12>
-        $<$<BOOL:${FALCOR_HAS_D3D12_AGILITY_SDK}>:agility-sdk>
-        $<$<BOOL:${FALCOR_HAS_NVAPI}>:nvapi>
-        # Windows system libraries.
-        $<$<PLATFORM_ID:Windows>:shcore.lib>
-        $<$<PLATFORM_ID:Windows>:shlwapi.lib>
-        $<$<PLATFORM_ID:Windows>:comctl32.lib>
-        $<$<PLATFORM_ID:Windows>:setupapi.lib>  # Used in MonitorInfo
-        # Linux system libraries.
-        $<$<PLATFORM_ID:Linux>:gtk3>
-)
+    git_version
+    FreeImage assimp ffmpeg OpenEXR OpenVDB lz4 zlib pugixml
+    glfw mikktspace nvtt
+    $<$<BOOL:${FALCOR_HAS_D3D12}>:d3d12>
+    $<$<BOOL:${FALCOR_HAS_D3D12_AGILITY_SDK}>:agility-sdk>
+    $<$<BOOL:${FALCOR_HAS_NVAPI}>:nvapi>
 
+    # Windows system libraries.
+    $<$<PLATFORM_ID:Windows>:shcore.lib>
+    $<$<PLATFORM_ID:Windows>:shlwapi.lib>
+    $<$<PLATFORM_ID:Windows>:comctl32.lib>
+    $<$<PLATFORM_ID:Windows>:setupapi.lib> # Used in MonitorInfo
+
+    # Linux system libraries.
+    $<$<PLATFORM_ID:Linux>:gtk3>
+)
 
 target_include_directories(Falcor
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 set_target_properties(Falcor PROPERTIES
@@ -859,7 +872,6 @@ add_dependencies(Falcor packman_dependencies)
 validate_headers(Falcor)
 
 # Falcor python module
-
 pybind11_add_module(FalcorPython FalcorPython.cpp)
 
 target_link_libraries(FalcorPython PRIVATE Falcor)
@@ -876,8 +888,9 @@ if(FALCOR_WINDOWS)
     add_custom_command(
         TARGET FalcorPython POST_BUILD
         COMMAND ${FALCOR_OUTPUT_DIRECTORY}/setpath.bat & ${Python_EXECUTABLE} ${CMAKE_SOURCE_DIR}/build_scripts/generate_stubs.py ${FALCOR_OUTPUT_DIRECTORY}/python
-        )
+    )
 endif()
+
 if(FALCOR_LINUX)
     add_custom_command(
         TARGET FalcorPython POST_BUILD
@@ -891,6 +904,7 @@ if(FALCOR_WINDOWS)
     file(GENERATE OUTPUT ${FALCOR_OUTPUT_DIRECTORY}/setpath.bat INPUT ${CMAKE_SOURCE_DIR}/build_scripts/setpath.bat.in)
     file(GENERATE OUTPUT ${FALCOR_OUTPUT_DIRECTORY}/setpath.ps1 INPUT ${CMAKE_SOURCE_DIR}/build_scripts/setpath.ps1.in)
 endif()
+
 if(FALCOR_LINUX)
     file(GENERATE OUTPUT ${FALCOR_OUTPUT_DIRECTORY}/setpath.sh INPUT ${CMAKE_SOURCE_DIR}/build_scripts/setpath.sh.in)
 endif()
