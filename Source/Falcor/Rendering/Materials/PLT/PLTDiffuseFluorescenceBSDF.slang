@@ -75,8 +75,8 @@ struct PLTDiffuseFluorescenceBxDF
         const float colour = SpectrumUtils.rgbToSpectrum(albedo, wavelength);
         const float colourFluorescence = SpectrumUtils.rgbToSpectrum(albedoFluorescence, transitWavelength(wavelength));
         const float a = getFluorescencePower();
-
-        return ((1.0f-c*a)*colour)+(c*a*10.0*q*colourFluorescence);
+        // return colourFluorescence*5.0f;
+        return ((1.0f-c*a)*colour)+(c*a*q*colourFluorescence);
     }
 
     hwss_t lambdaPdf(const float3 toLight, const float3 toEye, const uint lobe, const PLTBeam beam, const hwss_t wavelengths)

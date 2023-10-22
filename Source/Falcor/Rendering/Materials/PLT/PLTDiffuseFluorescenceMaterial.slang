@@ -42,7 +42,7 @@ struct PLTDiffuseFluorescenceMaterial : MaterialBase, IMaterial
         SamplerState s = ms.getTextureSampler(header.getDefaultTextureSamplerID());
 
         const float3 baseColor = ms.sampleTexture(data.texBaseColor, s, sd.uv, data.baseColor, lod).rgb;
-        const float3 baseFluorescenceColor = ms.sampleTexture(data.texBaseColor, s, sd.uv, data.baseColor, lod).rgb + float3(0.0,0.3,0.3);
+        const float3 baseFluorescenceColor = ms.sampleTexture(data.texBaseColor, s, sd.uv, data.baseColor, lod).rgb + float3(0.0,0.8,0.0);
         const float3 emissionRGB = ms.sampleTexture(data.texEmissive, s, sd.uv, float4(1.f), lod).rgb;
         PLTDiffuseFluorescenceBSDF brdf = { { baseColor, baseFluorescenceColor, 1.0f, 1.0f }, data.emissionSpectralId, emissionRGB };
 
