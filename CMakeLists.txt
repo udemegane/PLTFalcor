@@ -6,6 +6,7 @@ cmake_policy(SET CMP0104 NEW)
 cmake_policy(SET CMP0057 NEW)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(Falcor
     DESCRIPTION "Falcor Realtime Rendering Framework"
