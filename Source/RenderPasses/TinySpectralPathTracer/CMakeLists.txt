@@ -4,6 +4,7 @@ target_sources(TinySpectralPathTracer PRIVATE
     TinySpectralPathTracer.cpp
     TinySpectralPathTracer.h
     TinySpectralPathTracer.cs.slang
+    TinySpectralPathTracer.rt.slang
 )
 
 target_copy_shaders(TinySpectralPathTracer RenderPasses/TinySpectralPathTracer)

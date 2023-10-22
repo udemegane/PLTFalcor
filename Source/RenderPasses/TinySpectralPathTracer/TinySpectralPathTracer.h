@@ -70,8 +70,30 @@ private:
     struct StaticParams
     {
         uint maxBounces = 8;
+        bool useInlineTracing = false;
         Program::DefineList getDefines(const TinySpectralPathTracer& owner) const;
     };
+    struct TracePass
+    {
+        std::string name;
+        std::string passDefine;
+        RtProgram::SharedPtr pProgram;
+        RtBindingTable::SharedPtr pBindingTable;
+        RtProgramVars::SharedPtr pVars;
+
+        TracePass(
+            std::shared_ptr<Device> pDevice,
+            const std::string& name,
+            const std::string& path,
+            const std::string& passDefine,
+            const Scene::SharedPtr& pScene,
+            const Program::DefineList& defines,
+            const Program::TypeConformanceList& typeConformances
+        );
+        void prepareProgram(std::shared_ptr<Device> pDevice, const Program::DefineList& defines);
+    };
+
+    std::unique_ptr<TracePass> mpRtPass;
     StaticParams mParams;
     uint32_t mFrameCount = 0u;
     bool mRecompile = false;

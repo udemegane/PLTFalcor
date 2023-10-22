@@ -26,8 +26,13 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "TinySpectralPathTracer.h"
+#include <memory>
+#include "Core/Program/ProgramVars.h"
+#include "Core/Program/RtBindingTable.h"
+#include "Core/Program/RtProgram.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
+#include "glm/fwd.hpp"
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
@@ -36,13 +41,16 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 namespace
 {
+const uint32_t kMaxPayloadSizeBytes = 128u;
+const uint32_t kMaxRecursionDepth = 2u;
 const std::string kTracePassFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer.cs.slang";
+const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer.rt.slang";
 
 const std::string kShaderModel = "6_5";
 
 const ChannelList kInputChannels = {
     {"vbuffer", "gVBuffer", "Visibility buffer", false},
-    {"viewW", "gViewW", "World space View Direction ", true},
+    {"viewW", "gViewW", "World space View Direction ", false},
 };
 
 const ChannelList kOutputChannels = {
@@ -52,6 +60,86 @@ const ChannelList kOutputChannels = {
 const std::string kMaxBounces = "maxBounces";
 
 } // namespace
+
+TinySpectralPathTracer::TracePass::TracePass(
+    std::shared_ptr<Device> pDevice,
+    const std::string& name,
+    const std::string& path,
+    const std::string& passDefine,
+    const Scene::SharedPtr& pScene,
+    const Program::DefineList& defines,
+    const Program::TypeConformanceList& typeConformances
+)
+    : name(name), passDefine(passDefine)
+{
+    auto desc = [&]()
+    {
+        RtProgram::Desc desc;
+        desc.addShaderModules(pScene->getShaderModules());
+        desc.addShaderLibrary(path);
+        desc.setShaderModel(kShaderModel);
+        desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
+        desc.setMaxAttributeSize(pScene->getRaytracingMaxAttributeSize());
+        desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
+        return desc;
+    }();
+    pBindingTable = RtBindingTable::create(2, 2, pScene->getGeometryCount());
+    pBindingTable->setRayGen(desc.addRayGen("rayGen"));
+    pBindingTable->setMiss(0, desc.addMiss("scatterMiss"));
+    pBindingTable->setMiss(1, desc.addMiss("shadowMiss"));
+
+    if (pScene->hasGeometryType(Scene::GeometryType::TriangleMesh))
+    {
+        pBindingTable->setHitGroup(
+            0, pScene->getGeometryIDs(Scene::GeometryType::TriangleMesh),
+            desc.addHitGroup("scatterTriangleMeshClosestHit", "scatterTriangleMeshAnyHit")
+        );
+        pBindingTable->setHitGroup(
+            1, pScene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("", "shadowTriangleMeshAnyHit")
+        );
+    }
+
+    if (pScene->hasGeometryType(Scene::GeometryType::DisplacedTriangleMesh))
+    {
+        pBindingTable->setHitGroup(
+            0, pScene->getGeometryIDs(Scene::GeometryType::DisplacedTriangleMesh),
+            desc.addHitGroup("scatterDisplacedTriangleMeshClosestHit", "", "displacedTriangleMeshIntersection")
+        );
+        pBindingTable->setHitGroup(
+            1, pScene->getGeometryIDs(Scene::GeometryType::DisplacedTriangleMesh),
+            desc.addHitGroup("", "", "displacedTriangleMeshIntersection")
+        );
+    }
+
+    if (pScene->hasGeometryType(Scene::GeometryType::Curve))
+    {
+        pBindingTable->setHitGroup(
+            0, pScene->getGeometryIDs(Scene::GeometryType::Curve), desc.addHitGroup("scatterCurveClosestHit", "", "curveIntersection")
+        );
+        pBindingTable->setHitGroup(1, pScene->getGeometryIDs(Scene::GeometryType::Curve), desc.addHitGroup("", "", "curveIntersection"));
+    }
+
+    if (pScene->hasGeometryType(Scene::GeometryType::SDFGrid))
+    {
+        pBindingTable->setHitGroup(
+            0, pScene->getGeometryIDs(Scene::GeometryType::SDFGrid), desc.addHitGroup("scatterSdfGridClosestHit", "", "sdfGridIntersection")
+        );
+        pBindingTable->setHitGroup(
+            1, pScene->getGeometryIDs(Scene::GeometryType::SDFGrid), desc.addHitGroup("", "", "sdfGridIntersection")
+        );
+    }
+
+    pProgram = RtProgram::create(pDevice, desc, defines);
+}
+
+void TinySpectralPathTracer::TracePass::prepareProgram(std::shared_ptr<Device> pDevice, const Program::DefineList& defines)
+{
+    FALCOR_ASSERT(pProgram != nullptr && pBindingTable != nullptr);
+    pProgram->setDefines(defines);
+    if (!passDefine.empty())
+        pProgram->addDefine(passDefine);
+    pVars = RtProgramVars::create(pDevice, pProgram, pBindingTable);
+}
 
 TinySpectralPathTracer::SharedPtr TinySpectralPathTracer::create(std::shared_ptr<Device> pDevice, const Dictionary& dict)
 {
@@ -99,6 +187,8 @@ void TinySpectralPathTracer::setScene(RenderContext* pRenderContext, const Scene
     mFrameCount = 0u;
     mpScene = pScene;
     mpTracePass = nullptr;
+    mpRtPass = nullptr;
+
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
     if (mpScene)
     {
@@ -138,6 +228,14 @@ void TinySpectralPathTracer::updatePrograms()
         // baseDesc.addShaderModules(mpScene->getShaderModules());
         mpTracePass = ComputePass::create(mpDevice, baseDesc, defines, true);
     }
+    if (!mpRtPass)
+    {
+        mpRtPass =
+            std::make_unique<TracePass>(mpDevice, "TracePass", kTracePassRTFileName, "", mpScene, defines, mpScene->getTypeConformances());
+        mpRtPass->prepareProgram(mpDevice, defines);
+        mpRtPass->pProgram->setTypeConformances(mpScene->getTypeConformances());
+    }
+    mRecompile = false;
 }
 
 void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -169,6 +267,7 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
 
     updatePrograms();
     FALCOR_ASSERT(mpTracePass);
+    FALCOR_ASSERT(mpRtPass);
 
     if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
     {
@@ -180,31 +279,60 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
 
     // }
     // set defines
-    mpTracePass->getProgram()->addDefines(mParams.getDefines(*this));
-    mpTracePass->getProgram()->addDefines(getValidResourceDefines(kInputChannels, renderData));
-    mpTracePass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
-    // preapre programVars
-
-    auto var = mpTracePass->getRootVar();
-    var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gFrameDim"] = targetDim;
-
-    const auto& bind = [&](const ChannelDesc& desc)
+    if (mParams.useInlineTracing)
     {
-        if (!desc.texname.empty())
-        {
-            var[desc.texname] = renderData.getTexture(desc.name);
-        }
-    };
-    for (auto channel : kInputChannels)
-        bind(channel);
-    for (auto channel : kOutputChannels)
-        bind(channel);
+        mpTracePass->getProgram()->addDefines(mParams.getDefines(*this));
+        mpTracePass->getProgram()->addDefines(getValidResourceDefines(kInputChannels, renderData));
+        mpTracePass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
-    mpSampleGenerator->setShaderData(var);
-    mpScene->setRaytracingShaderData(pRenderContext, var);
-    mpTracePass->execute(pRenderContext, {targetDim, 1u});
+        // preapre programVars
+
+        auto var = mpTracePass->getRootVar();
+        var["CB"]["gFrameCount"] = mFrameCount;
+        var["CB"]["gFrameDim"] = targetDim;
+
+        const auto& bind = [&](const ChannelDesc& desc)
+        {
+            if (!desc.texname.empty())
+            {
+                var[desc.texname] = renderData.getTexture(desc.name);
+            }
+        };
+        for (auto channel : kInputChannels)
+            bind(channel);
+        for (auto channel : kOutputChannels)
+            bind(channel);
+
+        mpSampleGenerator->setShaderData(var);
+        mpScene->setRaytracingShaderData(pRenderContext, var);
+        mpTracePass->execute(pRenderContext, {targetDim, 1u});
+    }
+    else
+    {
+        mpRtPass->pProgram->addDefines(mParams.getDefines(*this));
+        mpRtPass->pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
+        mpRtPass->pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+
+        auto var = mpRtPass->pVars.getRootVar();
+        var["CB"]["gFrameCount"] = mFrameCount;
+        var["CB"]["gFrameDim"] = targetDim;
+        const auto& bind = [&](const ChannelDesc& desc)
+        {
+            if (!desc.texname.empty())
+            {
+                var[desc.texname] = renderData.getTexture(desc.name);
+            }
+        };
+        for (auto channel : kInputChannels)
+            bind(channel);
+        for (auto channel : kOutputChannels)
+            bind(channel);
+
+        mpSampleGenerator->setShaderData(var);
+        mpScene->setRaytracingShaderData(pRenderContext, var);
+        mpScene->raytrace(pRenderContext, mpRtPass->pProgram.get(), mpRtPass->pVars, {targetDim, 1u});
+    }
     mFrameCount++;
 }
 
