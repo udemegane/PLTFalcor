@@ -41,7 +41,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 namespace
 {
-const uint32_t kMaxPayloadSizeBytes = 128u;
+const uint32_t kMaxPayloadSizeBytes = 80u;
 const uint32_t kMaxRecursionDepth = 2u;
 const std::string kTracePassFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer.cs.slang";
 const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer.rt.slang";
@@ -72,6 +72,8 @@ TinySpectralPathTracer::TracePass::TracePass(
 )
     : name(name), passDefine(passDefine)
 {
+    const auto& globalTypeConformances = pScene->getMaterialSystem()->getTypeConformances();
+
     auto desc = [&]()
     {
         RtProgram::Desc desc;
@@ -84,7 +86,7 @@ TinySpectralPathTracer::TracePass::TracePass(
         return desc;
     }();
     pBindingTable = RtBindingTable::create(2, 2, pScene->getGeometryCount());
-    pBindingTable->setRayGen(desc.addRayGen("rayGen"));
+    pBindingTable->setRayGen(desc.addRayGen("rayGen", globalTypeConformances));
     pBindingTable->setMiss(0, desc.addMiss("scatterMiss"));
     pBindingTable->setMiss(1, desc.addMiss("shadowMiss"));
 
@@ -232,8 +234,8 @@ void TinySpectralPathTracer::updatePrograms()
     {
         mpRtPass =
             std::make_unique<TracePass>(mpDevice, "TracePass", kTracePassRTFileName, "", mpScene, defines, mpScene->getTypeConformances());
-        mpRtPass->prepareProgram(mpDevice, defines);
         mpRtPass->pProgram->setTypeConformances(mpScene->getTypeConformances());
+        mpRtPass->prepareProgram(mpDevice, defines);
     }
     mRecompile = false;
 }
