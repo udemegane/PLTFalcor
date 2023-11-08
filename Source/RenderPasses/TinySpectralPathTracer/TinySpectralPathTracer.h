@@ -27,6 +27,8 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "Rendering/Lights/EmissiveLightSampler.h"
+#include "Rendering/Lights/EnvMapSampler.h"
 #include "Utils/Sampling/SampleGenerator.h"
 
 using namespace Falcor;
@@ -62,6 +64,8 @@ private:
 
     Scene::SharedPtr mpScene;
     SampleGenerator::SharedPtr mpSampleGenerator;
+    EnvMapSampler::SharedPtr mpEnvMapSampler;
+    EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
     // RenderPasses
     ComputePass::SharedPtr mpReflectTypes;
@@ -70,7 +74,9 @@ private:
     struct StaticParams
     {
         uint maxBounces = 8;
+        uint mHWSS = 4;
         bool useInlineTracing = false;
+        bool useEmissiveLights = true;
         Program::DefineList getDefines(const TinySpectralPathTracer& owner) const;
     };
     struct TracePass

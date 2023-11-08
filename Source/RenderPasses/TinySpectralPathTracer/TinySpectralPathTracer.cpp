@@ -26,13 +26,13 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "TinySpectralPathTracer.h"
-#include <memory>
-#include "Core/Program/ProgramVars.h"
-#include "Core/Program/RtBindingTable.h"
-#include "Core/Program/RtProgram.h"
+// #include <memory>
+// #include "Core/Program/ProgramVars.h"
+// #include "Core/Program/RtBindingTable.h"
+// #include "Core/Program/RtProgram.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
-#include "glm/fwd.hpp"
+#include "Rendering/Lights/EmissiveUniformSampler.h"
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
@@ -41,10 +41,10 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 namespace
 {
-const uint32_t kMaxPayloadSizeBytes = 80u;
+const uint32_t kMaxPayloadSizeBytes = 88u;
 const uint32_t kMaxRecursionDepth = 2u;
 const std::string kTracePassFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer.cs.slang";
-const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer.rt.slang";
+const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer2.rt.slang";
 
 const std::string kShaderModel = "6_5";
 
@@ -79,7 +79,7 @@ TinySpectralPathTracer::TracePass::TracePass(
         RtProgram::Desc desc;
         desc.addShaderModules(pScene->getShaderModules());
         desc.addShaderLibrary(path);
-        desc.setShaderModel(kShaderModel);
+        // desc.setShaderModel(kShaderModel);
         desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
         desc.setMaxAttributeSize(pScene->getRaytracingMaxAttributeSize());
         desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
@@ -181,6 +181,7 @@ Program::DefineList TinySpectralPathTracer::StaticParams::getDefines(const TinyS
 {
     Program::DefineList defines;
     defines.add("MAX_BOUNCES", std::to_string(maxBounces));
+    defines.add("HWSS_SAMPLES", std::to_string(mHWSS));
     return defines;
 }
 
@@ -190,7 +191,8 @@ void TinySpectralPathTracer::setScene(RenderContext* pRenderContext, const Scene
     mpScene = pScene;
     mpTracePass = nullptr;
     mpRtPass = nullptr;
-
+    mpEmissiveSampler = nullptr;
+    mpEnvMapSampler = nullptr;
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
     if (mpScene)
     {
@@ -275,11 +277,25 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
     {
         throw RuntimeError("TinySpectralPathTracer does not support dynamic Object.");
     }
-
-    // EmissiveLight対応してるっけ？
-    // if(mpScene->getRenderSettings().useEmissiveLights){
-
-    // }
+    if (mpScene->useEnvLight())
+    {
+        if (!mpEnvMapSampler)
+            mpEnvMapSampler = EnvMapSampler::create(this->mpDevice, mpScene->getEnvMap());
+        FALCOR_ASSERT(mpEnvMapSampler);
+    }
+    else
+        mpEnvMapSampler = nullptr;
+    if (mpScene->getRenderSettings().useEmissiveLights)
+        mpScene->getLightCollection(pRenderContext);
+    if (mParams.useEmissiveLights && mpScene->useEmissiveLights())
+    {
+        if (!mpEmissiveSampler)
+            mpEmissiveSampler = EmissiveUniformSampler::create(pRenderContext, mpScene);
+        FALCOR_ASSERT(mpEmissiveSampler);
+        mpEmissiveSampler->update(pRenderContext);
+    }
+    else
+        mpEmissiveSampler = nullptr;
     // set defines
 
     if (mParams.useInlineTracing)
@@ -312,6 +328,8 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
     }
     else
     {
+        if (mpEmissiveSampler)
+            mpRtPass->pProgram->addDefines(mpEmissiveSampler->getDefines());
         mpRtPass->pProgram->addDefines(mParams.getDefines(*this));
         mpRtPass->pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
         mpRtPass->pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
@@ -319,6 +337,10 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
         auto var = mpRtPass->pVars.getRootVar();
         var["CB"]["gFrameCount"] = mFrameCount;
         var["CB"]["gFrameDim"] = targetDim;
+        if (mpEnvMapSampler)
+            mpEnvMapSampler->setShaderData(var["CB"]["envMapSampler"]);
+        if (mpEmissiveSampler)
+            mpEmissiveSampler->setShaderData(var["CB"]["emissiveSampler"]);
         const auto& bind = [&](const ChannelDesc& desc)
         {
             if (!desc.texname.empty())
