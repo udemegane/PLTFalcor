@@ -21,7 +21,7 @@ import Rendering.Materials.PLT.Mueller;
 import Rendering.PLT;
 
 import Path;
-import testcb;
+import CB;
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;

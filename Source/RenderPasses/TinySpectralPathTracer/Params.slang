@@ -1,7 +1,7 @@
 #pragma once
 #include "Utils/Math/MathConstants.slangh"
 
-static const bool kUseEnvLight = true;
+static const bool kUseEnvLight = false;
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kUseEmissiveLights = true;
 static const bool kUseAnalyticLights = true;

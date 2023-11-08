@@ -258,8 +258,8 @@ bool NEE<S : ISampleGenerator>(
     // const uint2 pixel,
     // const TriangleHit triangleHit,
     const ShadingData sd,
-    // const VertexData V,
-    // const uint matID,
+    const VertexData V,
+    const uint matID,
     const IMaterialInstance bsdf,
     const BSDFProperties bsdfProp
 )
@@ -290,7 +290,7 @@ bool NEE<S : ISampleGenerator>(
     let visRayDesc = ls.getVisibilityRay();
     if (!traceShadowRay(visRayDesc.Origin, visRayDesc.Direction, visRayDesc.TMax))
         return true;
-    if (doMis)
+    if (kDoMIS)
     {
         const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
         ls.beam.scale(MISWeight(ls.pdf, bsdfPdf));
@@ -298,7 +298,11 @@ bool NEE<S : ISampleGenerator>(
 
     // eval lighting
     // fs(wi,wo)*dot(wo,n)
-    bsdf.eval(sd, ls.dir, (uint)LobeType::NonDelta, ls.beam);
+    // sd.V = ls.dir;
+    let lod = ExplicitLodTextureSampler(0.f);
+    const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r, lod);
+
+    bsdf.eval(forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
 
     if (kHWSSDoMIS)
     {
@@ -307,6 +311,8 @@ bool NEE<S : ISampleGenerator>(
     }
     // Le(x_D<->x_D-1)
     L = max(float3(.0f), SpectrumUtils.spectrumToRgb(ls.beam.L, ls.beam.wavelengths, ls.beam.hwss_comps));
+    // const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
+    // L = ls.beam.L[0];
     hwssWeight = HWSSWeight(ls.beam);
     return true;
 }
@@ -342,7 +348,7 @@ float3 tracePath(const in uint2 pixel, const in uint2 frameDim)
     }
     else
     {
-        for (path.length = 0; path.length < kMaxBounces && !path.terminated;)
+        for (; path.length < kMaxBounces && !path.terminated;)
         {
             RayDesc ray;
             ray.Origin = path.origin;
@@ -351,7 +357,6 @@ float3 tracePath(const in uint2 pixel, const in uint2 frameDim)
             ray.TMax = kRayTMax;
             uint rayFlags = 0;
             TraceRay(gScene.rtAccel, rayFlags, 0xff, 0, rayTypeCount, 0, ray, path);
-            break;
         }
     }
 
@@ -378,13 +383,17 @@ void onHit(inout Path path, const HitInfo hit)
     { // NEE Contribution
         float3 L = float3(0.f);
         float hwssWeight = 0.f;
-        NEE(L, path.sg, hwssWeight, path.wavelength, 0, sd, bsdf, bsdfProp);
-        path.thp *= hwssWeight;
-        path.radiance += path.thp * L;
+        const TriangleHit triangleHit = hit.getTriangleHit();
+        // v = ;
+        // materialID = ;
+        NEE(L, path.sg, hwssWeight, path.wavelength, 0, sd, gScene.getVertexData(triangleHit), gScene.getMaterialID(triangleHit.instanceID),
+            bsdf, bsdfProp);
+        // path.thp *= ;
+        path.radiance += path.thp * L * hwssWeight;
     }
     { // PRR //update path
         BSDFSample bsdfSample;
-        const float prr = 0.9f;
+        const float prr = path.length == 0 ? 1.0f : 0.9f;
         const bool sampleValid = pltSampleBSDF(sd, bsdf, path.sg, bsdfSample, path.wavelength);
         if (sampleValid && sampleNext1D(path.sg) <= prr)
         {
@@ -392,6 +401,7 @@ void onHit(inout Path path, const HitInfo hit)
             path.dir = bsdfSample.wo;
             path.origin = sd.computeNewRayOrigin();
             path.thp *= bsdfSample.weight;
+            path.thp = path.thp / prr;
             path.lastNonDeltaPdf = !isDelta ? bsdfSample.pdf : path.lastNonDeltaPdf;
         }
         else

@@ -72,7 +72,7 @@ private:
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
     uint32_t                    mTileSize = 512;                ///< Size of a tile
-    uint                        mMaxBounces = 32;               ///< Max number of indirect bounces (0 = none).
+    uint                        mMaxBounces = 0;               ///< Max number of indirect bounces (0 = none).
     Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffer.
 
     // Configuration
