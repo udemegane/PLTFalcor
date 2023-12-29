@@ -19,7 +19,6 @@ struct Path
     // 24B
     float3 origin;
     float3 dir;
-    // float3 normal;
     // 4B
     float wavelength;
 

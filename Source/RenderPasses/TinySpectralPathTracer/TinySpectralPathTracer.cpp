@@ -181,7 +181,12 @@ Program::DefineList TinySpectralPathTracer::StaticParams::getDefines(const TinyS
 {
     Program::DefineList defines;
     defines.add("MAX_BOUNCES", std::to_string(maxBounces));
+    defines.add("USE_RIS_DI", useRISDI ? "1" : "0");
+    defines.add("RIS_SAMPLES", std::to_string(RISSamples));
     defines.add("HWSS_SAMPLES", std::to_string(mHWSS));
+    defines.add("USE_ANALYTIC_LIGHTS", useAnalyticLights ? "1" : "0");
+    defines.add("USE_EMISSIVE_LIGHTS", useEmissiveLights ? "1" : "0");
+    defines.add("USE_ENV_LIGHTS", useEnvLight ? "1" : "0");
     return defines;
 }
 
@@ -206,6 +211,7 @@ void TinySpectralPathTracer::setScene(RenderContext* pRenderContext, const Scene
 
 void TinySpectralPathTracer::updatePrograms()
 {
+    // executed every frame
     FALCOR_ASSERT(mpScene);
     if (mRecompile == false)
         return;
@@ -254,6 +260,8 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mOptionsChanged = false;
     }
+
+    // Wait for the scene to be loaded
     if (!mpScene)
     {
         const auto clear = [&](const auto& name)
@@ -269,35 +277,58 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
         return;
     }
 
-    updatePrograms();
-    FALCOR_ASSERT(mpTracePass);
-    FALCOR_ASSERT(mpRtPass);
-
+    // don't support dynamic scene because of difficuluties of Resampling theory
     if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
     {
         throw RuntimeError("TinySpectralPathTracer does not support dynamic Object.");
     }
+
+    // handle environment map
     if (mpScene->useEnvLight())
     {
+        mParams.useEnvLight = true;
         if (!mpEnvMapSampler)
             mpEnvMapSampler = EnvMapSampler::create(this->mpDevice, mpScene->getEnvMap());
         FALCOR_ASSERT(mpEnvMapSampler);
     }
     else
-        mpEnvMapSampler = nullptr;
-    if (mpScene->getRenderSettings().useEmissiveLights)
-        mpScene->getLightCollection(pRenderContext);
-    if (mParams.useEmissiveLights && mpScene->useEmissiveLights())
     {
+        mpEnvMapSampler = nullptr;
+        mParams.useEnvLight = false;
+    }
+
+    // handle emissive lights
+    if (mpScene->getRenderSettings().useEmissiveLights)
+    {
+        mpScene->getLightCollection(pRenderContext);
+    }
+    if (mpScene->useEmissiveLights())
+    {
+        mParams.useEmissiveLights = true;
         if (!mpEmissiveSampler)
             mpEmissiveSampler = EmissiveUniformSampler::create(pRenderContext, mpScene);
         FALCOR_ASSERT(mpEmissiveSampler);
         mpEmissiveSampler->update(pRenderContext);
     }
     else
+    {
+        mParams.useEmissiveLights = false;
         mpEmissiveSampler = nullptr;
+    }
     // set defines
 
+    if (mpScene->useAnalyticLights())
+        mParams.useAnalyticLights = true;
+    else
+        mParams.useAnalyticLights = false;
+
+    // update programs
+    updatePrograms();
+    FALCOR_ASSERT(mpTracePass);
+    FALCOR_ASSERT(mpRtPass);
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    /* DEPRECATED */
     if (mParams.useInlineTracing)
     {
         mpTracePass->getProgram()->addDefines(mParams.getDefines(*this));
@@ -365,7 +396,9 @@ void TinySpectralPathTracer::renderUI(Gui::Widgets& widget)
     bool dirty = false;
     dirty |= widget.var("Max bounces", mParams.maxBounces, 0u, 1u << 16);
     widget.tooltip("Maximum path length for indirect illumination.\n0 = direct only\n1 = one indirect bounce etc.", true);
-
+    dirty |= widget.var("HWSS Samples", mParams.mHWSS, 0u, 8u);
+    dirty |= widget.checkbox("Use RIS DI", mParams.useRISDI);
+    dirty |= widget.var("RIS Samples", mParams.RISSamples, 0u, 32u);
     if (dirty)
     {
         mOptionsChanged = true;

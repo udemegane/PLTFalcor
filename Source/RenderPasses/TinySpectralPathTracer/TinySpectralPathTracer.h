@@ -73,10 +73,14 @@ private:
 
     struct StaticParams
     {
-        uint maxBounces = 8;
+        uint maxBounces = 1;
         uint mHWSS = 4;
+        bool useRISDI = true;
+        uint RISSamples = 4;
         bool useInlineTracing = false;
         bool useEmissiveLights = true;
+        bool useEnvLight = true;
+        bool useAnalyticLights = true;
         Program::DefineList getDefines(const TinySpectralPathTracer& owner) const;
     };
     struct TracePass

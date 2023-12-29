@@ -21,11 +21,14 @@ import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Materials.BxDF;
 import Rendering.Materials.PLT.Mueller;
 // import Rendering.Materials.PLT;
+import Utils.Color.ColorHelpers;
+
 import Rendering.PLT;
 import LightSampling;
 import Path;
 import Params;
 import CB;
+import Reservoir;
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
@@ -75,6 +78,15 @@ float HWSSWeight(const PLTBeam beam)
     }
     else
         return 1.f / float(beam.hwss_comps);
+}
+
+void forwardHWSSMis(const IMaterialInstance bsdf, const ShadingData sd, const float3 wo, const uint sampledBsdfLobe, inout PLTBeam beam)
+{
+    if (kHWSSDoMIS)
+    {
+        const hwss_t pdfs = bsdf.lambdaPdf(sd, wo, sampledBsdfLobe, beam, beam.wavelengths);
+        beam.spectralPDFs *= pdfs;
+    }
 }
 
 // BSDF sampling
@@ -272,49 +284,252 @@ bool NEE<S : ISampleGenerator>(
     if (!sampleReflection && !sampleTransmission)
         return false; // If bsdf has delta lobes.
 
-    // sample light
-    LightSample ls;
-    const bool importanceSampleSpectrum = true; // TODO: move to params
-    const bool valid = generateLightSample(sd, sampleReflection, sampleTransmission, sg, wavelength, importanceSampleSpectrum, ls);
-    if (!valid || !any(ls.beam.L > 0.f))
-        return false;
-    // Update HWSS component
-    // 代表波長以外を捨てる時
-    // if (!mHWSSDoMIS &&)
-    //     ls.beam.collapseToHeroWavelengthOnly();
+    if (!kUSERISDirectIllumination)
+    {
+        // sample light
+        LightSample ls;
+        const bool importanceSampleSpectrum = true; // TODO: move to params
+        const bool valid = generateLightSample(sd, sampleReflection, sampleTransmission, sg, wavelength, importanceSampleSpectrum, ls);
+        if (!valid || !any(ls.beam.L > 0.f))
+            return false;
+        // Update HWSS component
+        // 代表波長以外を捨てる時
+        // if (!mHWSSDoMIS &&)
+        //     ls.beam.collapseToHeroWavelengthOnly();
 
-    bool doMis = kDoMIS && ls.lightType != (uint)SampledLightType::Analytic;
+        bool doMis = kDoMIS && ls.lightType != (uint)SampledLightType::Analytic;
+
+        // Check visibility
+        // V(wo)
+        let visRayDesc = ls.getVisibilityRay();
+        if (!traceShadowRay(visRayDesc.Origin, visRayDesc.Direction, visRayDesc.TMax))
+            return true;
+
+        if (doMis)
+        {
+            const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
+            ls.beam.scale(MISWeight(ls.pdf, bsdfPdf));
+        }
+
+        // eval lighting
+        // fs(wi,wo)*dot(wo,n)
+        // sd.V = ls.dir;
+
+        let lod = ExplicitLodTextureSampler(0.f);
+        const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r, lod);
+        ls.beam.propagate(forwardSd.posW);
+        bsdf.eval(forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
+        forwardHWSSMis(bsdf, forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
+
+        { // ヤバいやつ
+            const float k = M_2PI / (1e-3f * ls.beam.wavelengths.x);
+            ls.beam.propagate(gScene.camera.data.posW);
+            const float polarizationIntensity = gScene.camera.data.polarizer;
+            const float polarizationTheta = gScene.camera.data.polarizerTheta;
+            if (polarizationIntensity > .0f)
+            {
+                // Rotate to camera frame
+                const float3 cameraW = normalize(gScene.camera.data.cameraW);
+                const float3 cameraU = normalize(gScene.camera.data.cameraU);
+                ls.beam.rotateFrame(cameraU, -cameraW);
+
+                // Polarize
+                const float4x4 P = (1.f - polarizationIntensity) * ident4() + polarizationIntensity * MuellerPolarizer(polarizationTheta);
+                for (int j = 0; j < ls.beam.hwss_comps; ++j)
+                    ls.beam.setSP(j, mul(P, ls.beam.getSP(j)));
+            }
+        }
+        hwssWeight = HWSSWeight(ls.beam);
+
+        // Le(x_D<->x_D-1)
+        L = max(float3(.0f), SpectrumUtils.spectrumToRgb(ls.beam.L, ls.beam.wavelengths, ls.beam.hwss_comps));
+        return true;
+    }
+
+    Reservoir r = Reservoir();
+    for (int i = 0; i < kRISSamples; i++)
+    {
+        // sample light
+        LightSample ls;
+        const bool importanceSampleSpectrum = true; // TODO: move to params
+        const bool valid = generateLightSample(sd, sampleReflection, sampleTransmission, sg, wavelength, importanceSampleSpectrum, ls);
+        if (!valid || !any(ls.beam.L > 0.f))
+            return false;
+        // Update HWSS component
+        // 代表波長以外を捨てる時
+        // if (!mHWSSDoMIS &&)
+        //     ls.beam.collapseToHeroWavelengthOnly();
+
+        bool doMis = kDoMIS && ls.lightType != (uint)SampledLightType::Analytic;
+
+        // if (doMis)
+        // {
+        //     const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
+        //     ls.beam.scale(MISWeight(ls.pdf, bsdfPdf));
+        // }
+
+        // eval lighting
+        // fs(wi,wo)*dot(wo,n)
+        // sd.V = ls.dir;
+
+        let lod = ExplicitLodTextureSampler(0.f);
+        const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r, lod);
+        ls.beam.propagate(forwardSd.posW);
+        bsdf.eval(forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
+        forwardHWSSMis(bsdf, forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
+
+        { // ヤバいやつ
+            const float k = M_2PI / (1e-3f * ls.beam.wavelengths.x);
+            ls.beam.propagate(gScene.camera.data.posW);
+            const float polarizationIntensity = gScene.camera.data.polarizer;
+            const float polarizationTheta = gScene.camera.data.polarizerTheta;
+            if (polarizationIntensity > .0f)
+            {
+                // Rotate to camera frame
+                const float3 cameraW = normalize(gScene.camera.data.cameraW);
+                const float3 cameraU = normalize(gScene.camera.data.cameraU);
+                ls.beam.rotateFrame(cameraU, -cameraW);
+
+                // Polarize
+                const float4x4 P = (1.f - polarizationIntensity) * ident4() + polarizationIntensity * MuellerPolarizer(polarizationTheta);
+                for (int j = 0; j < ls.beam.hwss_comps; ++j)
+                    ls.beam.setSP(j, mul(P, ls.beam.getSP(j)));
+            }
+        }
+        // hwssWeight = HWSSWeight(ls.beam);
+
+        // Le(x_D<->x_D-1)
+        float3 l = max(float3(.0f), SpectrumUtils.spectrumToRgb(ls.beam.L, ls.beam.wavelengths, ls.beam.hwss_comps));
+        float p_hat = luminance(l);
+        float w_i = p_hat / (ls.pdf * kRISSamples);
+        r.update(ls, w_i, p_hat, sampleNext1D(sg));
+    }
+
+    bool doMis = kDoMIS && r.s.lightType != (uint)SampledLightType::Analytic;
 
     // Check visibility
     // V(wo)
-    let visRayDesc = ls.getVisibilityRay();
+    let visRayDesc = r.s.getVisibilityRay();
     if (!traceShadowRay(visRayDesc.Origin, visRayDesc.Direction, visRayDesc.TMax))
         return true;
-    if (kDoMIS)
-    {
-        const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
-        ls.beam.scale(MISWeight(ls.pdf, bsdfPdf));
-    }
 
-    // eval lighting
-    // fs(wi,wo)*dot(wo,n)
-    // sd.V = ls.dir;
-    let lod = ExplicitLodTextureSampler(0.f);
-    const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r, lod);
+    // if (doMis)
+    // {
+    //     const float bsdfPdf = bsdf.pdf(sd, r.s.dir, r.s.beam.wavelengths.x);
+    //     r.s.beam.scale(MISWeight(r.s.pdf, bsdfPdf));
+    // }
 
-    bsdf.eval(forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
+    // // eval lighting
+    // // fs(wi,wo)*dot(wo,n)
+    // // sd.V = ls.dir;
 
-    if (kHWSSDoMIS)
-    {
-        const hwss_t pdfs = bsdf.lambdaPdf(sd, ls.dir, (uint)LobeType::NonDelta, ls.beam, ls.beam.wavelengths);
-        ls.beam.spectralPDFs *= pdfs;
-    }
+    // let lod = ExplicitLodTextureSampler(0.f);
+    // const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r, lod);
+    // ls.beam.propagate(forwardSd.posW);
+    // bsdf.eval(forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
+    // forwardHWSSMis(bsdf, forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
+
+    // { // ヤバいやつ
+    //     const float k = M_2PI / (1e-3f * ls.beam.wavelengths.x);
+    //     ls.beam.propagate(gScene.camera.data.posW);
+    //     const float polarizationIntensity = gScene.camera.data.polarizer;
+    //     const float polarizationTheta = gScene.camera.data.polarizerTheta;
+    //     if (polarizationIntensity > .0f)
+    //     {
+    //         // Rotate to camera frame
+    //         const float3 cameraW = normalize(gScene.camera.data.cameraW);
+    //         const float3 cameraU = normalize(gScene.camera.data.cameraU);
+    //         ls.beam.rotateFrame(cameraU, -cameraW);
+
+    //         // Polarize
+    //         const float4x4 P = (1.f - polarizationIntensity) * ident4() + polarizationIntensity * MuellerPolarizer(polarizationTheta);
+    //         for (int j = 0; j < ls.beam.hwss_comps; ++j)
+    //             ls.beam.setSP(j, mul(P, ls.beam.getSP(j)));
+    //     }
+    // }
+    hwssWeight = HWSSWeight(r.s.beam);
+
     // Le(x_D<->x_D-1)
-    L = max(float3(.0f), SpectrumUtils.spectrumToRgb(ls.beam.L, ls.beam.wavelengths, ls.beam.hwss_comps));
+    L = max(float3(.0f), SpectrumUtils.spectrumToRgb(r.s.beam.L, r.s.beam.wavelengths, r.s.beam.hwss_comps) * r.evalUCW());
     // const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
     // L = ls.beam.L[0];
-    hwssWeight = HWSSWeight(ls.beam);
     return true;
+}
+
+void onHit(inout Path path, const HitInfo hit)
+{
+    let lod = ExplicitLodTextureSampler(0.f);
+    const ShadingData sd = loadShadingData(hit, path.origin, path.dir, lod);
+    let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+    const BSDFProperties bsdfProp = bsdf.getProperties(sd);
+
+    // BSDF Sampling
+    BSDFSample bsdfSample;
+    const bool sampleValid = pltSampleBSDF(sd, bsdf, path.sg, bsdfSample, path.wavelength);
+    // if (!sampleValid)
+    // {
+    //     path.terminated = true;
+    // }
+    const ShadingData forwardSd = loadShadingData(hit, path.origin, bsdfSample.wo, lod);
+    let fbsdf = gScene.materials.getMaterialInstance(forwardSd, lod);
+    const BSDFProperties fbsdfProp = fbsdf.getProperties(sd);
+
+    {                                               // Emissibe Material Contribution
+        const bool importanceSampleSpectrum = true; // TODO:
+                                                    // float3 Le = float3(0.f);
+                                                    // evalEmissive(Le, path.sg); TODO:
+        hwss_t sampledWavelengths;
+        hwss_t Le =
+            gScene.sampleSpectrum(bsdfProp.emissionSpectralId, path.wavelength, path.sg, importanceSampleSpectrum, sampledWavelengths);
+        Le *= SpectrumUtils.rgbToSpectrum(bsdfProp.emissionRGB, sampledWavelengths);
+    }
+    if (path.length >= kMaxBounces)
+    {
+        path.terminated = true;
+        return;
+    }
+
+    { // NEE Contribution
+        float3 L = float3(0.f);
+        float hwssWeight = 0.f;
+        const TriangleHit triangleHit = hit.getTriangleHit();
+        // v = ;
+        // materialID = ;
+        NEE(L, path.sg, hwssWeight, path.wavelength, 0, sd, gScene.getVertexData(triangleHit), gScene.getMaterialID(triangleHit.instanceID),
+            bsdf, bsdfProp);
+        // path.thp *= ;
+        path.radiance += max(path.thp * L * hwssWeight, 0.0f);
+    }
+    { // PRR //update path
+        // BSDFSample bsdfSample;
+        const float prr = path.length == 0 ? 1.0f : 0.9f;
+        // const bool sampleValid = pltSampleBSDF(sd, bsdf, path.sg, bsdfSample, path.wavelength);
+        if (sampleValid && sampleNext1D(path.sg) <= prr)
+        {
+            const bool isDelta = bsdfSample.isLobe(LobeType::Delta);
+            path.dir = bsdfSample.wo;
+            path.origin = sd.computeNewRayOrigin();
+            path.thp *= bsdfSample.weight;
+            path.thp = path.thp / prr;
+            //
+            path.lastNonDeltaPdf = !isDelta ? bsdfSample.pdf : path.lastNonDeltaPdf;
+        }
+        else
+        {
+            path.terminated = true;
+            return;
+        }
+    }
+    path.length++;
+}
+
+void onMiss(inout Path path)
+{
+    path.terminated = true;
+    {
+        float3 Le = gScene.envMap.eval(WorldRayDirection());
+        // path.radiance += path.thp * Le;
+    }
 }
 
 float3 tracePath(const in uint2 pixel, const in uint2 frameDim)
@@ -323,9 +538,9 @@ float3 tracePath(const in uint2 pixel, const in uint2 frameDim)
     const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gScene.camera);
     const HitInfo hit = HitInfo(gVBuffer[pixel]);
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
-    const float wl = SpectrumSampler.sampleOne(sampleNext1D(sg));
+    const float wl = SpectrumSampler.sampleOne(sampleNext1D(sg)); // use RIS instead of random sampling?
     Path path = Path(sg, primaryRayOrigin, primaryRayDir, wl);
-
+    float3 oc = float3(0.0f);
     bool useVBuffer = false;
     if (useVBuffer)
     {
@@ -357,69 +572,11 @@ float3 tracePath(const in uint2 pixel, const in uint2 frameDim)
             ray.TMax = kRayTMax;
             uint rayFlags = 0;
             TraceRay(gScene.rtAccel, rayFlags, 0xff, 0, rayTypeCount, 0, ray, path);
+            // oc += path.radiance;
         }
     }
 
     return path.radiance;
-}
-
-void onHit(inout Path path, const HitInfo hit)
-{
-    let lod = ExplicitLodTextureSampler(0.f);
-    const ShadingData sd = loadShadingData(hit, path.origin, path.dir, lod);
-    let bsdf = gScene.materials.getMaterialInstance(sd, lod);
-    const BSDFProperties bsdfProp = bsdf.getProperties(sd);
-    {                                               // Emissibe Material Contribution
-        const bool importanceSampleSpectrum = true; // TODO:
-        // float3 Le = float3(0.f);
-        // evalEmissive(Le, path.sg); TODO:
-    }
-    if (path.length >= kMaxBounces)
-    {
-        path.terminated = true;
-        return;
-    }
-
-    { // NEE Contribution
-        float3 L = float3(0.f);
-        float hwssWeight = 0.f;
-        const TriangleHit triangleHit = hit.getTriangleHit();
-        // v = ;
-        // materialID = ;
-        NEE(L, path.sg, hwssWeight, path.wavelength, 0, sd, gScene.getVertexData(triangleHit), gScene.getMaterialID(triangleHit.instanceID),
-            bsdf, bsdfProp);
-        // path.thp *= ;
-        path.radiance += path.thp * L * hwssWeight;
-    }
-    { // PRR //update path
-        BSDFSample bsdfSample;
-        const float prr = path.length == 0 ? 1.0f : 0.9f;
-        const bool sampleValid = pltSampleBSDF(sd, bsdf, path.sg, bsdfSample, path.wavelength);
-        if (sampleValid && sampleNext1D(path.sg) <= prr)
-        {
-            const bool isDelta = bsdfSample.isLobe(LobeType::Delta);
-            path.dir = bsdfSample.wo;
-            path.origin = sd.computeNewRayOrigin();
-            path.thp *= bsdfSample.weight;
-            path.thp = path.thp / prr;
-            path.lastNonDeltaPdf = !isDelta ? bsdfSample.pdf : path.lastNonDeltaPdf;
-        }
-        else
-        {
-            path.terminated = true;
-            return;
-        }
-    }
-    path.length++;
-}
-
-void onMiss(inout Path path)
-{
-    path.terminated = true;
-    {
-        float3 Le = gScene.envMap.eval(WorldRayDirection());
-        path.radiance += path.thp * Le;
-    }
 }
 
 // Miss Shader

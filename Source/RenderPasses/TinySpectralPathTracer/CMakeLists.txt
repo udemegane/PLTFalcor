@@ -10,6 +10,7 @@ target_sources(TinySpectralPathTracer PRIVATE
     Path.slang
     CB.slang
     Params.slang
+    Reservoir.slang
 )
 
 target_copy_shaders(TinySpectralPathTracer RenderPasses/TinySpectralPathTracer)

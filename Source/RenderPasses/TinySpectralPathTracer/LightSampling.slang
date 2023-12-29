@@ -264,7 +264,7 @@ bool generateLightSample<S : ISampleGenerator>(
     ls.beam.scale(1.f / selectionPdf);
 
     // Reject samples in non-requested hemispheres.
-    const bool isReflection = dot(sd.faceN, ls.dir) * dot(sd.faceN, sd.V) > .0f;
+    const bool isReflection = dot(sd.faceN, ls.dir) * dot(sd.faceN, sd.V) > .0f; // 怪しい
     return valid && ls.pdf > 1e-6f && !(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
 }
 

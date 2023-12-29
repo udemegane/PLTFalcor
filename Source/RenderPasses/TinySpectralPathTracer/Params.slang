@@ -1,10 +1,12 @@
 #pragma once
 #include "Utils/Math/MathConstants.slangh"
 
-static const bool kUseEnvLight = false;
+static const bool kUseEnvLight = USE_ENV_LIGHTS;
 static const uint kMaxBounces = MAX_BOUNCES;
-static const bool kUseEmissiveLights = true;
-static const bool kUseAnalyticLights = true;
+static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
+static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
+static const bool kUSERISDirectIllumination = USE_RIS_DI;
+static const uint kRISSamples = RIS_SAMPLES;
 static const bool kDoMIS = true;
 static const bool kHWSSDoMIS = true;
 static const bool kForceFullyCoherent = false;
