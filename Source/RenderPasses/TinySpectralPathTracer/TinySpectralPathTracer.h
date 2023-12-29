@@ -75,6 +75,7 @@ private:
     {
         uint maxBounces = 1;
         uint mHWSS = 4;
+        bool conbineBSDFandNEESampling = false;
         bool useRISDI = true;
         uint RISSamples = 4;
         bool useInlineTracing = false;

@@ -181,6 +181,7 @@ Program::DefineList TinySpectralPathTracer::StaticParams::getDefines(const TinyS
 {
     Program::DefineList defines;
     defines.add("MAX_BOUNCES", std::to_string(maxBounces));
+    defines.add("USE_MIS", conbineBSDFandNEESampling ? "1" : "0");
     defines.add("USE_RIS_DI", useRISDI ? "1" : "0");
     defines.add("RIS_SAMPLES", std::to_string(RISSamples));
     defines.add("HWSS_SAMPLES", std::to_string(mHWSS));
@@ -397,6 +398,7 @@ void TinySpectralPathTracer::renderUI(Gui::Widgets& widget)
     dirty |= widget.var("Max bounces", mParams.maxBounces, 0u, 1u << 16);
     widget.tooltip("Maximum path length for indirect illumination.\n0 = direct only\n1 = one indirect bounce etc.", true);
     dirty |= widget.var("HWSS Samples", mParams.mHWSS, 0u, 8u);
+    dirty |= widget.checkbox("Use MIS", mParams.conbineBSDFandNEESampling);
     dirty |= widget.checkbox("Use RIS DI", mParams.useRISDI);
     dirty |= widget.var("RIS Samples", mParams.RISSamples, 0u, 32u);
     if (dirty)

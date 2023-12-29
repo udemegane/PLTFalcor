@@ -354,7 +354,8 @@ bool NEE<S : ISampleGenerator>(
         const bool importanceSampleSpectrum = true; // TODO: move to params
         const bool valid = generateLightSample(sd, sampleReflection, sampleTransmission, sg, wavelength, importanceSampleSpectrum, ls);
         if (!valid || !any(ls.beam.L > 0.f))
-            return false;
+            continue;
+
         // Update HWSS component
         // 代表波長以外を捨てる時
         // if (!mHWSSDoMIS &&)
@@ -362,11 +363,11 @@ bool NEE<S : ISampleGenerator>(
 
         bool doMis = kDoMIS && ls.lightType != (uint)SampledLightType::Analytic;
 
-        // if (doMis)
-        // {
-        //     const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
-        //     ls.beam.scale(MISWeight(ls.pdf, bsdfPdf));
-        // }
+        if (doMis)
+        {
+            const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
+            ls.beam.scale(MISWeight(ls.pdf, bsdfPdf));
+        }
 
         // eval lighting
         // fs(wi,wo)*dot(wo,n)
@@ -413,44 +414,10 @@ bool NEE<S : ISampleGenerator>(
     if (!traceShadowRay(visRayDesc.Origin, visRayDesc.Direction, visRayDesc.TMax))
         return true;
 
-    // if (doMis)
-    // {
-    //     const float bsdfPdf = bsdf.pdf(sd, r.s.dir, r.s.beam.wavelengths.x);
-    //     r.s.beam.scale(MISWeight(r.s.pdf, bsdfPdf));
-    // }
-
-    // // eval lighting
-    // // fs(wi,wo)*dot(wo,n)
-    // // sd.V = ls.dir;
-
-    // let lod = ExplicitLodTextureSampler(0.f);
-    // const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r, lod);
-    // ls.beam.propagate(forwardSd.posW);
-    // bsdf.eval(forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
-    // forwardHWSSMis(bsdf, forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
-
-    // { // ヤバいやつ
-    //     const float k = M_2PI / (1e-3f * ls.beam.wavelengths.x);
-    //     ls.beam.propagate(gScene.camera.data.posW);
-    //     const float polarizationIntensity = gScene.camera.data.polarizer;
-    //     const float polarizationTheta = gScene.camera.data.polarizerTheta;
-    //     if (polarizationIntensity > .0f)
-    //     {
-    //         // Rotate to camera frame
-    //         const float3 cameraW = normalize(gScene.camera.data.cameraW);
-    //         const float3 cameraU = normalize(gScene.camera.data.cameraU);
-    //         ls.beam.rotateFrame(cameraU, -cameraW);
-
-    //         // Polarize
-    //         const float4x4 P = (1.f - polarizationIntensity) * ident4() + polarizationIntensity * MuellerPolarizer(polarizationTheta);
-    //         for (int j = 0; j < ls.beam.hwss_comps; ++j)
-    //             ls.beam.setSP(j, mul(P, ls.beam.getSP(j)));
-    //     }
-    // }
     hwssWeight = HWSSWeight(r.s.beam);
-
     // Le(x_D<->x_D-1)
-    L = max(float3(.0f), SpectrumUtils.spectrumToRgb(r.s.beam.L, r.s.beam.wavelengths, r.s.beam.hwss_comps) * r.evalUCW());
+    r.s.beam.scale(r.evalUCW() * r.s.pdf);
+    L = max(float3(.0f), SpectrumUtils.spectrumToRgb(r.s.beam.L, r.s.beam.wavelengths, r.s.beam.hwss_comps));
     // const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
     // L = ls.beam.L[0];
     return true;
