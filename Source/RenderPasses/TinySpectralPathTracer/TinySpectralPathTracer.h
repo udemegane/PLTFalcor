@@ -60,6 +60,7 @@ private:
     TinySpectralPathTracer(std::shared_ptr<Device> pDevice) : RenderPass(std::move(pDevice)) {}
     void parseDictionary(const Dictionary& dict);
     void preapreVars();
+    void preparePathtracer();
     void updatePrograms();
 
     Scene::SharedPtr mpScene;
@@ -70,6 +71,10 @@ private:
     // RenderPasses
     ComputePass::SharedPtr mpReflectTypes;
     ComputePass::SharedPtr mpTracePass;
+
+    // Resources
+    ParameterBlock::SharedPtr mpPathTracerBlock;
+    Buffer::SharedPtr mpPathBuffer;
 
     struct StaticParams
     {

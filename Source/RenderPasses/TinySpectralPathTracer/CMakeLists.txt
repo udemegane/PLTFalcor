@@ -6,6 +6,8 @@ target_sources(TinySpectralPathTracer PRIVATE
     TinySpectralPathTracer.cs.slang
     TinySpectralPathTracer.rt.slang
     TinySpectralPathTracer2.rt.slang
+    TracePath.rt.slang
+    RISPathTracer.slang
     LightSampling.slang
     Path.slang
     CB.slang

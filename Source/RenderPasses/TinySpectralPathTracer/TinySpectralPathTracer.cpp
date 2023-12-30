@@ -34,6 +34,8 @@
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include "Rendering/Lights/EmissiveUniformSampler.h"
 
+#define USE_PARAMETER_BLOCK 0
+
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, TinySpectralPathTracer>();
@@ -45,6 +47,7 @@ const uint32_t kMaxPayloadSizeBytes = 88u;
 const uint32_t kMaxRecursionDepth = 2u;
 const std::string kTracePassFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer.cs.slang";
 const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer2.rt.slang";
+// const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TracePath.rt.slang";
 
 const std::string kShaderModel = "6_5";
 
@@ -210,6 +213,8 @@ void TinySpectralPathTracer::setScene(RenderContext* pRenderContext, const Scene
     }
 }
 
+void TinySpectralPathTracer::preparePathtracer() {}
+
 void TinySpectralPathTracer::updatePrograms()
 {
     // executed every frame
@@ -328,6 +333,19 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
     FALCOR_ASSERT(mpTracePass);
     FALCOR_ASSERT(mpRtPass);
 
+// // prepare pathtracer
+#if USE_PARAMETER_BLOCK
+    {
+        if (!mpPathTracerBlock)
+        {
+            auto reflector = mpTracePass->getProgram()->getReflector()->getParameterBlock("gPathTracer");
+
+            mpPathTracerBlock = ParameterBlock::create(mpDevice.get(), reflector);
+            FALCOR_ASSERT(mpPathTracerBlock);
+        }
+    }
+#endif
+
     ///////////////////////////////////////////////////////////////////////////////////////////////
     /* DEPRECATED */
     if (mParams.useInlineTracing)
@@ -367,6 +385,20 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
         mpRtPass->pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
         auto var = mpRtPass->pVars.getRootVar();
+
+        // prepare buffers
+        {
+            if (!mpPathBuffer)
+            {
+                uint32_t pathSurfaceCount = targetDim.x * targetDim.y * mParams.maxBounces;
+                mpPathBuffer = Buffer::createStructured(
+                    mpDevice.get(), var["gPathData"], pathSurfaceCount,
+                    ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+                );
+                FALCOR_ASSERT(mpPathBuffer);
+            }
+        }
+
         var["CB"]["gFrameCount"] = mFrameCount;
         var["CB"]["gFrameDim"] = targetDim;
         if (mpEnvMapSampler)
@@ -389,6 +421,56 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
         mpScene->setRaytracingShaderData(pRenderContext, var);
         mpScene->raytrace(pRenderContext, mpRtPass->pProgram.get(), mpRtPass->pVars, {targetDim, 1u});
     }
+#if USE_PARAMETER_BLOCK
+    else
+    {
+        if (mpEmissiveSampler)
+            mpRtPass->pProgram->addDefines(mpEmissiveSampler->getDefines());
+        mpRtPass->pProgram->addDefines(mParams.getDefines(*this));
+        mpRtPass->pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
+        mpRtPass->pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+
+        auto var = mpRtPass->pVars.getRootVar();
+        auto ptvar = mpPathTracerBlock->getRootVar();
+        // prepare buffers
+        {
+            if (!mpPathBuffer)
+            {
+                uint32_t pathSurfaceCount = targetDim.x * targetDim.y * mParams.maxBounces;
+                mpPathBuffer = Buffer::createStructured(
+                    mpDevice.get(), ptvar["gPathData"], pathSurfaceCount,
+                    ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false
+                );
+                FALCOR_ASSERT(mpPathBuffer);
+            }
+        }
+
+        ptvar["gFrameCount"] = mFrameCount;
+        ptvar["gFrameDim"] = targetDim;
+        if (mpEnvMapSampler)
+            mpEnvMapSampler->setShaderData(ptvar["envMapSampler"]);
+        if (mpEmissiveSampler)
+            mpEmissiveSampler->setShaderData(ptvar["emissiveSampler"]);
+        ptvar["gPathData"] = mpPathBuffer;
+        const auto& bind = [&](const ChannelDesc& desc)
+        {
+            if (!desc.texname.empty())
+            {
+                var[desc.texname] = renderData.getTexture(desc.name);
+            }
+        };
+        for (auto channel : kInputChannels)
+            bind(channel);
+        for (auto channel : kOutputChannels)
+            bind(channel);
+
+        mpSampleGenerator->setShaderData(var);
+        mpScene->setRaytracingShaderData(pRenderContext, var);
+        var["gPathTracer"] = mpPathTracerBlock;
+        mpScene->raytrace(pRenderContext, mpRtPass->pProgram.get(), mpRtPass->pVars, {targetDim, 1u});
+    }
+#endif
+
     mFrameCount++;
 }
 

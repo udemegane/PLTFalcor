@@ -29,6 +29,7 @@ import Path;
 import Params;
 import CB;
 import Reservoir;
+import RISPathTracer;
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
@@ -37,11 +38,42 @@ Texture2D<float4> gViewW; // Optional
 // Outputs
 RWTexture2D<float4> gOutputColor;
 
+RWStructuredBuffer<PathSurface> gPathData;
+
 #define is_valid(name) (is_valid_##name != 0)
 
 struct ShadowRayData
 {
     bool visible;
+}
+
+bool traceShadowRay(float3 origin, float3 dir, float distance)
+{
+    RayDesc ray;
+    ray.Origin = origin;
+    ray.Direction = dir;
+    ray.TMin = 0.f;
+    ray.TMax = distance;
+    ShadowRayData rayData;
+    rayData.visible = false;
+    TraceRay(
+        gScene.rtAccel, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff /* instanceInclusionMask */, 1 /* hitIdx */, rayTypeCount,
+        1 /* missIdx */, ray, rayData
+    );
+    return rayData.visible;
+}
+
+enum class PropagationDirection
+{
+    ToLight,
+    ToCamera,
+};
+
+float RR(const float rrVal, const float rrE, const float sample)
+{
+    const float p = pow(rrVal, rrE);
+
+    return sample < p ? .0f : 1.f - p;
 }
 
 float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
@@ -98,9 +130,9 @@ bool pltSampleBSDF<
         return false;
     return true;
 }
-
-ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const ITextureSampler lod)
+ShadingData loadShadingData(const HitInfo hit, const float3 dir, const ITextureSampler lod, const PropagationDirection lightDir)
 {
+    const float3 toPrevSurface = lightDir == PropagationDirection::ToLight ? -dir : dir;
     VertexData v = {};
     uint materialID = {};
 
@@ -116,7 +148,7 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const flo
     if (hit.getType() == HitType::DisplacedTriangle)
     {
         const DisplacedTriangleHit displacedTriangleHit = hit.getDisplacedTriangleHit();
-        v = gScene.getVertexData(displacedTriangleHit, -rayDir);
+        v = gScene.getVertexData(displacedTriangleHit, toPrevSurface);
         materialID = gScene.getMaterialID(displacedTriangleHit.instanceID);
     }
 #endif
@@ -128,108 +160,11 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const flo
         materialID = gScene.getMaterialID(curveHit.instanceID);
     }
 #endif
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_SDF_GRID)
-    if (hit.getType() == HitType::SDFGrid)
-    {
-        const SDFGridHit sdfGridHit = hit.getSDFGridHit();
-        v = gScene.getVertexDataFromSDFGrid(sdfGridHit, rayOrigin, rayDir);
-        materialID = gScene.getMaterialID(sdfGridHit.instanceID);
-    }
-#endif
 
-    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir, lod);
+    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, toPrevSurface, lod);
 
     return sd;
 }
-
-bool traceShadowRay(float3 origin, float3 dir, float distance)
-{
-    RayDesc ray;
-    ray.Origin = origin;
-    ray.Direction = dir;
-    ray.TMin = 0.f;
-    ray.TMax = distance;
-    ShadowRayData rayData;
-    rayData.visible = false;
-    TraceRay(
-        gScene.rtAccel, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff /* instanceInclusionMask */, 1 /* hitIdx */, rayTypeCount,
-        1 /* missIdx */, ray, rayData
-    );
-    return rayData.visible;
-}
-
-// float3 evalDirectAnalytic(
-//     const ShadingData sd,
-//     const IMaterialInstance bsdf,
-//     inout SampleGenerator sg,
-//     const float wavelength,
-//     bool importanceSampleSpectrum
-// )
-// {
-//     float3 outColor;
-//     const uint lightCount = gScene.getLightCount();
-//     if (lightCount == 0)
-//         return float3(0.0f);
-//     const uint lightIndex = min(uint(sampleNext1D(sg) * lightCount), lightCount - 1);
-//     float invPdf = lightCount;
-//     AnalyticLightSample ls;
-//     let light = gScene.getLight(lightIndex);
-//     if (!sampleLight(sd.posW, light, sg, wavelength, importanceSampleSpectrum, ls))
-//     {
-//         return float3(0.0f);
-//     }
-//     const bool isDistantEmitter = light.type == (uint)LightType::Directional || light.type == (uint)LightType::Distant;
-//     const float A = light.surfaceArea; // mm^2
-//     const float Omega = 4.f * M_PI * (1.f - sqr(light.cosSubtendedAngle));
-//     const hwss_t L = ls.Li * invPdf;
-
-//     // // Setup returned sample.
-
-//     // // Offset shading position to avoid self-intersection.
-//     // computeNewRayOrigin(sd, ls.dir);
-//     // // No need to adjust the ray length to avoid self-intersections at the light.
-//     // ls.distance = ls.distance;
-//     // ls.dir = ls.dir;
-
-//     const hwss_t wavelengths = ls.wavelengths;
-//     PLTBeam beam;
-//     if (isDistantEmitter)
-//         beam = pltSourceBeamDistant(-ls.dir, Omega, L, wavelengths, 0.25f /*kSourcingMaxBeamOmega*/, false /*kForceFullyCoherent*/);
-//     else
-//         beam = pltSourceBeamArea(
-//             light.posW, -ls.dir, A, ls.distance, L, wavelengths, 0.25f /*kSourcingMaxBeamOmega*/, false /*kForceFullyCoherent*/
-//         );
-//     const uint lobeTypes = bsdf.getLobes(sd);
-
-//     const bool hasReflection = lobeTypes & uint(LobeType::Reflection);
-//     const bool hasTransmission = lobeTypes & uint(LobeType::Transmission);
-//     if (dot(ls.dir, sd.N) <= kMinCosTheta && !hasTransmission)
-//         return float3(0.f);
-//     if (dot(ls.dir, sd.N) >= -kMinCosTheta && !hasReflection)
-//         return float3(0.f);
-//     const float3 origin = computeRayOrigin(sd.posW, dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN);
-//     if (!traceShadowRay(origin, ls.dir, ls.distance))
-//         return float3(0.0f);
-
-//     beam.propagate(gScene.camera.data.posW);
-//     bsdf.eval(sd, ls.dir, lobeTypes, beam);
-//     const hwss_t pdfs = bsdf.lambdaPdf(sd, ls.dir, lobeTypes, beam, wavelengths);
-//     beam.spectralPDFs *= pdfs;
-
-//     float pathContribution = 1.0f;
-//     if (true)
-//     {
-//         // MIS spectral contributions
-//         const float sum = dot(beam.spectralPDFs, hwss_t(1.f));
-//         pathContribution *= sum > FLT_EPSILON ? beam.spectralPDFs[0] / sum : .0f;
-//     }
-//     else
-//         pathContribution *= 1.f / float(beam.hwss_comps);
-//     // return pathContribution;
-//     const hwss_t Li = beam.L * dot(sd.N, ls.dir);
-//     // return SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps);
-//     return max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps) * pathContribution);
-// }
 
 bool evalEmissive<S : ISampleGenerator>(
     inout float3 L,
@@ -264,7 +199,7 @@ bool NEE<S : ISampleGenerator>(
     inout float3 L,
     inout S sg,
     inout float hwssWeight,
-    const float wavelength,
+    float wavelength,
     const int bounceIdx,
     // const float3 wi,
     // const uint2 pixel,
@@ -273,7 +208,8 @@ bool NEE<S : ISampleGenerator>(
     const VertexData V,
     const uint matID,
     const IMaterialInstance bsdf,
-    const BSDFProperties bsdfProp
+    const BSDFProperties bsdfProp,
+    const float3 prevOrigin
 )
 {
     const uint lobes = bsdf.getLobes(sd);
@@ -316,14 +252,16 @@ bool NEE<S : ISampleGenerator>(
         // sd.V = ls.dir;
 
         let lod = ExplicitLodTextureSampler(0.f);
-        const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r, lod);
+        const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r /*-(light to surface)*/, lod);
         ls.beam.propagate(forwardSd.posW);
+        // ここで光源からカメラまで全部evalしないとスループットがおかしくなる
+        // MAX_BOUNSEサイズの配列に全部格納する力技でどうにかなりそうな気はする
         bsdf.eval(forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
         forwardHWSSMis(bsdf, forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
+        ls.beam.propagate(prevOrigin);
 
         { // ヤバいやつ
             const float k = M_2PI / (1e-3f * ls.beam.wavelengths.x);
-            ls.beam.propagate(gScene.camera.data.posW);
             const float polarizationIntensity = gScene.camera.data.polarizer;
             const float polarizationTheta = gScene.camera.data.polarizerTheta;
             if (polarizationIntensity > .0f)
@@ -346,12 +284,15 @@ bool NEE<S : ISampleGenerator>(
         return true;
     }
 
+    // [unroll]
     Reservoir r = Reservoir();
     for (int i = 0; i < kRISSamples; i++)
     {
+        // wavelength = SpectrumSampler.sampleOne(sampleNext1D(sg));
         // sample light
         LightSample ls;
         const bool importanceSampleSpectrum = true; // TODO: move to params
+        const S tmpSg = sg;
         const bool valid = generateLightSample(sd, sampleReflection, sampleTransmission, sg, wavelength, importanceSampleSpectrum, ls);
         if (!valid || !any(ls.beam.L > 0.f))
             continue;
@@ -375,10 +316,13 @@ bool NEE<S : ISampleGenerator>(
 
         let lod = ExplicitLodTextureSampler(0.f);
         const ShadingData forwardSd = gScene.materials.prepareShadingData(V, matID, -ls.beam.r, lod);
+        // const ShadingData forwardSd =
         ls.beam.propagate(forwardSd.posW);
         bsdf.eval(forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
         forwardHWSSMis(bsdf, forwardSd, sd.V, (uint)LobeType::NonDelta, ls.beam);
 
+        // 元の実装だとカメラに到達するビームに対して謎の偏光処理をしている
+        if (bounceIdx == 0)
         { // ヤバいやつ
             const float k = M_2PI / (1e-3f * ls.beam.wavelengths.x);
             ls.beam.propagate(gScene.camera.data.posW);
@@ -402,7 +346,8 @@ bool NEE<S : ISampleGenerator>(
         // Le(x_D<->x_D-1)
         float3 l = max(float3(.0f), SpectrumUtils.spectrumToRgb(ls.beam.L, ls.beam.wavelengths, ls.beam.hwss_comps));
         float p_hat = luminance(l);
-        float w_i = p_hat / (ls.pdf * kRISSamples);
+        float m_i = 1.0f / kRISSamples;
+        float w_i = m_i * p_hat * (1.0f / ls.pdf /*resampling mis weight*/);
         r.update(ls, w_i, p_hat, sampleNext1D(sg));
     }
 
@@ -426,7 +371,7 @@ bool NEE<S : ISampleGenerator>(
 void onHit(inout Path path, const HitInfo hit)
 {
     let lod = ExplicitLodTextureSampler(0.f);
-    const ShadingData sd = loadShadingData(hit, path.origin, path.dir, lod);
+    const ShadingData sd = loadShadingData(hit, path.dir, lod, PropagationDirection::ToLight);
     let bsdf = gScene.materials.getMaterialInstance(sd, lod);
     const BSDFProperties bsdfProp = bsdf.getProperties(sd);
 
@@ -437,9 +382,6 @@ void onHit(inout Path path, const HitInfo hit)
     // {
     //     path.terminated = true;
     // }
-    const ShadingData forwardSd = loadShadingData(hit, path.origin, bsdfSample.wo, lod);
-    let fbsdf = gScene.materials.getMaterialInstance(forwardSd, lod);
-    const BSDFProperties fbsdfProp = fbsdf.getProperties(sd);
 
     {                                               // Emissibe Material Contribution
         const bool importanceSampleSpectrum = true; // TODO:
@@ -458,26 +400,35 @@ void onHit(inout Path path, const HitInfo hit)
 
     { // NEE Contribution
         float3 L = float3(0.f);
-        float hwssWeight = 0.f;
+        float hwssWeight = 1.f;
         const TriangleHit triangleHit = hit.getTriangleHit();
         // v = ;
         // materialID = ;
-        NEE(L, path.sg, hwssWeight, path.wavelength, 0, sd, gScene.getVertexData(triangleHit), gScene.getMaterialID(triangleHit.instanceID),
-            bsdf, bsdfProp);
-        // path.thp *= ;
-        path.radiance += max(path.thp * L * hwssWeight, 0.0f);
+        NEE(L, path.sg, hwssWeight, path.wavelength, path.length, sd, gScene.getVertexData(triangleHit),
+            gScene.getMaterialID(triangleHit.instanceID), bsdf, bsdfProp, path.origin);
+        const float contrib = hwssWeight * path.weight / (path.pdf * path.thp_mod);
+        path.radiance += max(contrib * L, 0.0f);
     }
     { // PRR //update path
         // BSDFSample bsdfSample;
         const float prr = path.length == 0 ? 1.0f : 0.9f;
+        const float rcp_thp = RR(1.f - path.weight, 2.f, sampleNext1D(path.sg));
+
         // const bool sampleValid = pltSampleBSDF(sd, bsdf, path.sg, bsdfSample, path.wavelength);
-        if (sampleValid && sampleNext1D(path.sg) <= prr)
+        // if (rcp_thp != 0.0f)
+        if (rcp_thp != 0.0f)
         {
             const bool isDelta = bsdfSample.isLobe(LobeType::Delta);
             path.dir = bsdfSample.wo;
             path.origin = sd.computeNewRayOrigin();
-            path.thp *= bsdfSample.weight;
-            path.thp = path.thp / prr;
+            // const ShadingData forwardSd = loadShadingData(hit, path.origin, -path.dir, lod);
+            /*
+            わかったこととして、スループットのbsdf項を光源方向からbeamを育てないと正しい値にならなさそうな感じ
+            weightはbackward-weightらしいので、逆向き。
+            */
+            path.weight *= bsdfSample.weight;
+            path.pdf *= bsdfSample.pdf;
+            path.thp_mod *= rcp_thp;
             //
             path.lastNonDeltaPdf = !isDelta ? bsdfSample.pdf : path.lastNonDeltaPdf;
         }
@@ -619,3 +570,4 @@ void rayGen()
     float3 finalColor = tracePath(pixel, frameDim);
     gOutputColor[pixel] = float4(finalColor, 1.0f);
 }
+
