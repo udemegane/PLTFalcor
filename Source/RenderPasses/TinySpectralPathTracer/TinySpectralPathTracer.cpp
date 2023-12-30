@@ -43,10 +43,11 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 namespace
 {
-const uint32_t kMaxPayloadSizeBytes = 88u;
+const uint32_t kMaxPayloadSizeBytes = 100u;
 const uint32_t kMaxRecursionDepth = 2u;
 const std::string kTracePassFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer.cs.slang";
-const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer2.rt.slang";
+// const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TinySpectralPathTracer2.rt.slang";
+const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/RISSpectralPathTracer.rt.slang";
 // const std::string kTracePassRTFileName = "RenderPasses/TinySpectralPathTracer/TracePath.rt.slang";
 
 const std::string kShaderModel = "6_5";
@@ -383,13 +384,15 @@ void TinySpectralPathTracer::execute(RenderContext* pRenderContext, const Render
         mpRtPass->pProgram->addDefines(mParams.getDefines(*this));
         mpRtPass->pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
         mpRtPass->pProgram->addDefines(getValidResourceDefines(kOutputChannels, renderData));
+        mpRtPass->pProgram->addDefine("ENABLE_DEBUG_FEATURES", "1");
 
         auto var = mpRtPass->pVars.getRootVar();
 
         // prepare buffers
         {
-            if (!mpPathBuffer)
+            if (!mpPathBuffer || mOptionsChanged)
             {
+                mpPathBuffer = nullptr;
                 uint32_t pathSurfaceCount = targetDim.x * targetDim.y * mParams.maxBounces;
                 mpPathBuffer = Buffer::createStructured(
                     mpDevice.get(), var["gPathData"], pathSurfaceCount,

@@ -16,3 +16,4 @@ static const float kSourcingAreaFromEmissiveGeometry = 1.0f;
 static const float kSourcingMaxBeamOmega = 0.025f;
 static const float kShadowRayTMin = 1e-4;
 static const float kRayTMax = FLT_MAX;
+

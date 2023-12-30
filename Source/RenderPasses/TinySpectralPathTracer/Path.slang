@@ -10,6 +10,7 @@ import Utils.Color.SpectrumSampler;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Utils.Math.MathHelpers;
+import Params;
 
 struct Path
 {
@@ -35,6 +36,11 @@ struct Path
 
     bool terminated;
 
+#if ENABLE_DEBUG_FEATURES
+    float3 debugColor1;
+    float3 debugColor2;
+#endif
+
     __init(SampleGenerator sg, float3 rayGenOrigin, float3 rayGenDir, float samplingWaveLength)
     {
         this.wavelength = samplingWaveLength;
@@ -59,7 +65,9 @@ struct PathSurface
 
     // BSDF Lobe
     uint lobe;
-
+    float pathPdf;
+    float lastNonDeltaPdf;
+    float wavelength;
     // Infomation of Surface x_i
     property hit : HitInfo
     {
@@ -71,15 +79,21 @@ struct PathSurface
         }
     }
 
-    // From current surface x_i to next surface x_i+1.
+    // From current surface x_i to next surface x_i+1, sampled by current BSDF
     // In other words, propagation direction to emitter.
     property dir : float3
     {
         get {
-            return oct_to_ndir_equal_area_snorm(encodedDir);
+            float3 outdir = float3(0.0f);
+            outdir.x = encodedDir.x;
+            outdir.y = encodedDir.y;
+            outdir.z = sqrt(1.0f - dot(encodedDir, encodedDir));
+            return outdir;
         }
         set {
-            encodedDir = ndir_to_oct_equal_area_snorm(newValue);
+            float3 ndir = normalize(newValue);
+            encodedDir.x = dir.x;
+            encodedDir.y = dir.y;
         }
     }
 }

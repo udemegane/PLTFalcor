@@ -215,7 +215,7 @@ struct RISPathTracer
         return true;
     }
 
-    void evalThroughput(inout PLTBeam beam, const int pathlength, const uint2 pixel)
+    void evalThroughput(inout PLTBeam beam, const int pathlength, const uint2 pixel, )
     {
         let lod = ExplicitLodTextureSampler(0.0f);
         for (int i = pathlength; i > 0; i--)
