@@ -17,6 +17,8 @@ project(Falcor
 # Configuration options
 # -----------------------------------------------------------------------------
 
+add_compile_definitions(_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING)
+
 # Enable/disable reporting Falcor exceptions as fatal errors before actually throwing them.
 # This allows to break into the debugger at the location where an exception is thrown.
 set(FALCOR_REPORT_EXCEPTION_AS_ERROR OFF CACHE BOOL "Report Falcor exceptions as fatal errors (and break into debugger)")
