@@ -35,13 +35,16 @@ struct SpectrumSampler
     static const float maxWavelength = SpectrumUtils.maxWavelength;
 
     // Samples a single wavelengths, in uniform
-    static float sampleOne(const float rndSeed) {
+    static float sampleOne(const float rndSeed)
+    {
         const float spanWavelength = maxWavelength - minWavelength;
-        return minWavelength + rndSeed*spanWavelength;
+        const uint wl = minWavelength + rndSeed * spanWavelength;
+        return (float)wl;
     }
 
     // Given a hero wavelength, fill the rest
-    static hwss_t hwssWavelengths(const float hero) {
+    static hwss_t hwssWavelengths(const float hero)
+    {
         const float spanWavelength = maxWavelength - minWavelength;
 
         hwss_t hwss = .0f;
