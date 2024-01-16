@@ -86,7 +86,7 @@ bool selectLightType<S: ISampleGenerator>(out uint lightType, out float pdf, ino
 }
 
 /** Generates a light sample on the environment map. */
-bool generateEnvMapSample<S: ISampleGenerator>(const ShadingData sd, inout S sg, const float wavelength, out LightSampleSeed seed, out LightSample ls) {
+bool generateEnvMapSample<S: ISampleGenerator>(const ShadingData sd, inout S sg, const float wavelength, out PathReconstructionData seed, out LightSample ls) {
     ls = {}; // Default initialization to avoid divergence at returns.
     seed = {};
     if (!kUseEnvLight) return false;
@@ -104,15 +104,17 @@ bool generateEnvMapSample<S: ISampleGenerator>(const ShadingData sd, inout S sg,
     ls.distance = kRayTMax;
     ls.dir = lightSample.dir;
 
-    seed.Le = L;
-    seed.pdf = lightSample.pdf;
-    seed.origin = ls.origin;
-    seed.distance = ls.distance;
-    seed.dir = ls.dir;
-    // seed.posW =
-    seed.wavelength = wavelength;
-    seed.setDistantEmitterType(true);
-    seed.Size = kSourcingMaxBeamOmega;
+    seed.setLightSample(
+        L,
+        ls.pdf,
+        ls.origin,
+        ls.distance,
+        ls.dir,
+        float3(0.f),
+        wavelength,
+        true,
+        kSourcingMaxBeamOmega
+    );
 
     return any(L > 0.f);
 }
@@ -123,7 +125,7 @@ bool generateEmissiveSample<S : ISampleGenerator>(
     inout S sg,
     const float wavelength,
     bool importanceSampleSpectrum,
-    out LightSampleSeed seed,
+    out PathReconstructionData seed,
     out LightSample ls) {
     ls = {}; // Default initialization to avoid divergence at returns.
     seed = {};
@@ -144,16 +146,17 @@ bool generateEmissiveSample<S : ISampleGenerator>(
     ls.dir = normalize(toLight);
     ls.beam = pltSourceBeamArea(tls.posW, -ls.dir, kSourcingAreaFromEmissiveGeometry, ls.distance, L, tls.wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
 
-    seed.Le = L;
-    seed.pdf = tls.pdf;
-    seed.origin = ls.origin;
-    seed.distance = ls.distance;
-    seed.dir = ls.dir;
-    seed.posW = tls.posW;
-    seed.wavelength = wavelength;
-    seed.setDistantEmitterType(false);
-    seed.Size = kSourcingAreaFromEmissiveGeometry;
-
+    seed.setLightSample(
+        L,
+        ls.pdf,
+        ls.origin,
+        ls.distance,
+        ls.dir,
+        tls.posW,
+        wavelength,
+        false,
+        kSourcingAreaFromEmissiveGeometry
+    );
     return any(L > 0.f);
 }
 
@@ -163,7 +166,7 @@ bool generateAnalyticLightSample<S : ISampleGenerator>(
     inout S sg,
     const float wavelength,
     bool importanceSampleSpectrum,
-    out LightSampleSeed seed,
+    out PathReconstructionData seed,
     out LightSample ls) {
     ls = {}; // Default initialization to avoid divergence at returns.
     seed = {};
@@ -194,47 +197,46 @@ bool generateAnalyticLightSample<S : ISampleGenerator>(
     ls.distance = lightSample.distance;
     ls.dir = lightSample.dir;
 
-    seed.Le = L;
-    seed.pdf = lightSample.pdf;
-    seed.origin = ls.origin;
-    seed.distance = ls.distance;
-    seed.dir = ls.dir;
-    seed.posW = light.posW;
-    seed.wavelength = wavelength;
-    seed.setDistantEmitterType(isDistantEmitter);
+    seed.setLightSample(
+        L,
+        ls.pdf,
+        ls.origin,
+        ls.distance,
+        ls.dir,
+        light.posW,
+        wavelength,
+        isDistantEmitter,
+        isDistantEmitter ? Omega : A
+    );
 
     const hwss_t wavelengths = lightSample.wavelengths;
     if (isDistantEmitter)
     {
         ls.beam = pltSourceBeamDistant(-ls.dir, Omega, L, wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
-        seed.Size = Omega;
     }
     else
     {
         ls.beam = pltSourceBeamArea(light.posW, -ls.dir, A, ls.distance, L, wavelengths, kSourcingMaxBeamOmega, kForceFullyCoherent);
-        seed.Size = A;
     }
 
     return any(L > 0.f);
 }
 
-bool regenerateSample(const LightSampleSeed seed, out LightSample ls)
+bool regenerateSample(const PathReconstructionData seed, out LightSample ls)
 {
     ls = {}; // Default initialization to avoid divergence at returns.
-    uint lightType = (uint)seed.getLightType();
-    bool isDistantEmitter = seed.checkDistantEmitter();
-    if (!kUseEnvLight && lightType==(uint)SampledLightType::EnvMap)
+    if (!kUseEnvLight && seed.LightType==(uint)SampledLightType::EnvMap)
         return false;
-    if (!kUseEmissiveLights && lightType==(uint)SampledLightType::Emissive)
+    if (!kUseEmissiveLights && seed.LightType==(uint)SampledLightType::Emissive)
         return false;
-    if (!kUseAnalyticLights && lightType==(uint)SampledLightType::Analytic)
+    if (!kUseAnalyticLights && seed.LightType==(uint)SampledLightType::Analytic)
         return false;
 
     ls.pdf = seed.pdf;
     ls.origin = seed.origin;
     ls.distance = seed.distance;
     ls.dir = seed.dir;
-    if(isDistantEmitter)
+    if(seed.isDistantEmitter)
         ls.beam = pltSourceBeamDistant(-ls.dir, seed.Size, seed.Le, seed.wavelength, kSourcingMaxBeamOmega, kForceFullyCoherent);
     else
         ls.beam = pltSourceBeamArea(seed.posW, -ls.dir, seed.Size, ls.distance, seed.Le, seed.wavelength, kSourcingMaxBeamOmega, kForceFullyCoherent);
@@ -248,7 +250,7 @@ bool generateLightSample<S: ISampleGenerator>(const ShadingData sd,
                                               inout S tilesg,
                                               const float wavelength,
                                               bool importanceSampleSpectrum,
-                                              out LightSampleSeed seed,
+                                              out PathReconstructionData seed,
                                               out LightSample ls) {
     ls = {};
     seed = {};
@@ -271,9 +273,7 @@ bool generateLightSample<S: ISampleGenerator>(const ShadingData sd,
     if (kUseAnalyticLights && lightType == (uint)SampledLightType::Analytic)
         valid = generateAnalyticLightSample(sd, sg, wavelength, importanceSampleSpectrum, seed, ls);
 
-
-    seed.selectionPdf = selectionPdf;
-    seed.setLightType((SampledLightType)lightType);
+    seed.setLightType(lightType, selectionPdf);
 
     // Account for light type selection.
     ls.lightType = lightType;
@@ -286,7 +286,7 @@ bool generateLightSample<S: ISampleGenerator>(const ShadingData sd,
         !(!sampleReflection && isReflection) && !(!sampleTransmission && !isReflection);
 }
 
-bool restoreLightSample(const LightSampleSeed seed,
+bool restoreLightSample(const PathReconstructionData seed,
                         const ShadingData sd,
                         const bool sampleReflection,
                         const bool sampleTransmission,
@@ -296,7 +296,7 @@ bool restoreLightSample(const LightSampleSeed seed,
     ls = {};
     bool valid = regenerateSample(seed, ls);
 
-    ls.lightType = (uint)seed.getLightType();
+    ls.lightType = seed.LightType;
     ls.pdf *= seed.selectionPdf;
     ls.beam.scale(1.f/seed.selectionPdf);
 
