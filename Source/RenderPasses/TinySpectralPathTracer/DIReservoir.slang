@@ -1,6 +1,6 @@
 #include "Utils/Math/MathConstants.slangh"
 import Rendering.Utils.LightsSamplingUtils;
-struct Reservoir
+struct DIReservoir
 {
     float wSum;    // Sum of resampling weight
     float p_hat;   // value evaluated for p_hat(current_sample)
