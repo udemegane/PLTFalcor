@@ -41,7 +41,7 @@ using namespace Falcor;
 
 class ReSTIRPLTPT : public RenderPass {
 public:
-    FALCOR_PLUGIN_CLASS(ReSTIRPLTPT, "ReSTIRPLTPT", "Physical Light Transport Path Tracer.");
+    FALCOR_PLUGIN_CLASS(ReSTIRPLTPT, "ReSTIRPLTPT", "Physical Light Transport Path Tracer with ReSTIR PT Path-Resampling.");
 
     using SharedPtr = std::shared_ptr<ReSTIRPLTPT>;
 
@@ -125,5 +125,15 @@ private:
         RtProgramVars::SharedPtr pVars;
     };
     tracer_t mSampleTracer, mSolveTracer;
+
+    ComputePass::SharedPtr mpSpatialReusePass;
+    ComputePass::SharedPtr mpSpatialRetracePass;
+    ComputePass::SharedPtr mpTemporalReusePass;
+    ComputePass::SharedPtr mpTemporalRetracePass;
+    ComputePass::SharedPtr mpFinalShadingPass;
+
+    Buffer::SharedPtr mpRetracedBounceBuffer;
+    Buffer::SharedPtr mpIntermediateReservoirs1;
+    Buffer::SharedPtr mpIntermediateReservoirs2;
 };
 

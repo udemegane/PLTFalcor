@@ -7,6 +7,11 @@ target_sources(ReSTIRPLTPT PRIVATE
     pltpt.slangh
     pltpt_sample.rt.slang
     pltpt_solve.rt.slang
+    pltpt_spatial_reuse.cs.slang
+    pltpt_spatial_retrace.cs.slang
+    pltpt_temporal_reuse.cs.slang
+    pltpt_temporal_retrace.cs.slang
+    pltpt_final_shading.cs.slang
     Path.slang
     pltpt_constants.slangh
 

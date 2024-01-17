@@ -30,8 +30,10 @@ struct PathReconstructionData
     // References to Path-Vertex array //
     /////////////////////////////////////
     uint lastBounceIdx;                 ///< Index of the last bounce of the path.
-    int firstDispersiveInteractionIdx;  ///< -1 if no dispersive interaction
+    // int firstDispersiveInteractionIdx;  ///< -1 if no dispersive interaction
     int firstReconnectionableBounceIdx; ///< -1 if no reconnectionable bounce
+    int firstNonDeltaInteractionIdx;    ///< -1 if no non-delta interaction
+    // bool hasDispersiveInteractionBeforeReconnectionableBounce; ///< True if there is a dispersive interaction before the reconnectionable bounce.
     float jacobianCounterpart;          ///< Jacobian of the transformation from solid angle to area measure
                                         ///  and the ratio of bsdf sampling pdfs which is needed for PSS ran
                                         ///  -dom-valiable transformation.
@@ -75,13 +77,13 @@ struct PathReconstructionData
     [mutating]
     void setPathData(
         uint lastBounceIdx,
-        int firstDispersiveInteractionIdx,
+        int firstNonDeltaInteractionIdx,
         int firstReconnectionableBounceIdx,
         uint2 pixel,
         uint age)
     {
         this.lastBounceIdx = lastBounceIdx;
-        this.firstDispersiveInteractionIdx = firstDispersiveInteractionIdx;
+        this.firstNonDeltaInteractionIdx = firstNonDeltaInteractionIdx;
         this.firstReconnectionableBounceIdx = firstReconnectionableBounceIdx;
         this.pixel = pixel;
         this.age = age;
@@ -118,7 +120,7 @@ enum class PackedComponentsMask: uint
     // 4bits, X
     LastBounceIdx                  = 0b00000000000000000000000000111100,
     // 4bits, X
-    FirstDispersiveInteractionIdx  = 0b00000000000000000000001111000000,
+    FirstNonDeltaInteractionIdx    = 0b00000000000000000000001111000000,
     // 4bits, X
     FirstReconnectionableBounceIdx = 0b00000000000000000011110000000000,
     // 8bits, X
@@ -132,6 +134,7 @@ enum class PackedComponentsMask: uint
     PixelX                         = 0b00000000000000000000111111111111,
     // 12bit, Y
     PixelY                         = 0b00000000111111111111000000000000,
+
 }
 
 struct PackedPathReconstructionData
@@ -160,7 +163,7 @@ struct PackedPathReconstructionData
         this.packedComponents.y = 0u;
         this.packedComponents.x |= source.LightType & (uint)PackedComponentsMask::LightType;
         this.packedComponents.x |= (source.lastBounceIdx << 2) & (uint)PackedComponentsMask::LastBounceIdx;
-        this.packedComponents.x |= (source.firstDispersiveInteractionIdx << 6) & (uint)PackedComponentsMask::FirstDispersiveInteractionIdx;
+        this.packedComponents.x |= (source.firstNonDeltaInteractionIdx << 6) & (uint)PackedComponentsMask::FirstNonDeltaInteractionIdx;
         this.packedComponents.x |= (source.firstReconnectionableBounceIdx << 10) & (uint)PackedComponentsMask::FirstReconnectionableBounceIdx;
         this.packedComponents.x |= (source.age << 14) & (uint)PackedComponentsMask::Age;
         this.packedComponents.x |= ((source.isDistantEmitter ? 1u : 0u) << 22) & (uint)PackedComponentsMask::IsDistantEmitter;
@@ -182,7 +185,7 @@ struct PackedPathReconstructionData
         result.jacobianCounterpart = this.jacobianCounterpart;
         result.LightType = this.packedComponents.x & (uint)PackedComponentsMask::LightType;
         result.lastBounceIdx = (this.packedComponents.x & (uint)PackedComponentsMask::LastBounceIdx) >> 2;
-        result.firstDispersiveInteractionIdx = (this.packedComponents.x & (uint)PackedComponentsMask::FirstDispersiveInteractionIdx) >> 6;
+        result.firstNonDeltaInteractionIdx = (this.packedComponents.x & (uint)PackedComponentsMask::FirstNonDeltaInteractionIdx) >> 6;
         result.firstReconnectionableBounceIdx = (this.packedComponents.x & (uint)PackedComponentsMask::FirstReconnectionableBounceIdx) >> 10;
         result.age = (this.packedComponents.x & (uint)PackedComponentsMask::Age) >> 14;
         result.isDistantEmitter = (this.packedComponents.x & (uint)PackedComponentsMask::IsDistantEmitter) != 0;
