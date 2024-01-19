@@ -1,13 +1,12 @@
 #pragma once
 
-
 import PathHelper;
-
+import Utils.HWSS;
 struct Reservoir
 {
     float M = 0.0f;
     float w_sum = 0.0f;
-    float p_hat = 0.0f;
+    hwss_t p_hat = 0.0f;
     bool debugFlag = false;
     bool needMis = false;
     PathReconstructionData s;
@@ -20,7 +19,7 @@ struct Reservoir
     }
 
     [mutating]
-    bool update(const float wi, PathReconstructionData si, const float p_hat_i, const float rnd)
+    bool update(const float wi, PathReconstructionData si, const hwss_t p_hat_i, const float rnd)
     {
         w_sum += wi;
         M+=1.0f;
@@ -33,7 +32,7 @@ struct Reservoir
         return false;
     }
 
-    float evalUCW() {
+    hwss_t evalUCW() {
         return w_sum / p_hat;
     }
 };
