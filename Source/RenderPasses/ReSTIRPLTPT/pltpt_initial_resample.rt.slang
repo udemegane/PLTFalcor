@@ -147,6 +147,73 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
 #endif
 }
 
+bool initialResampling(
+    inout PLTSolve solveData,
+    const int bounceIdx,
+    float pathContribution,
+    PathReconstructionData seed,
+    inout PLTBeam beam
+    )
+{
+    if (!kUseDirectLights && bounceIdx <= 1)
+        return false;
+
+    const float k = M_2PI / (1e-3f * beam.wavelengths.x);
+
+#if DO_DEBUG_VIEW == 1
+    // Write coherence debug values before propagation to camera
+    writeDebugOutputCC2(DebugViewType::coherence_area, solveData, sqrt(beam.coherenceArea(k)) / 150.f);
+    writeDebugOutputCC(DebugViewType::coherence_anisotropy, solveData, beam.coherenceAnisotropy(k));
+#endif
+
+    // Propagate to camera
+    beam.propagate(gScene.camera.data.posW);
+
+    // Camera polarizer
+    const float polarizationIntensity = gScene.camera.data.polarizer;
+    const float polarizationTheta = gScene.camera.data.polarizerTheta;
+    if (polarizationIntensity > .0f)
+    {
+        // Rotate to camera frame
+        const float3 cameraW = normalize(gScene.camera.data.cameraW);
+        const float3 cameraU = normalize(gScene.camera.data.cameraU);
+        beam.rotateFrame(cameraU, -cameraW);
+
+        // Polarize
+        const float4x4 P = (1.f - polarizationIntensity) * ident4() + polarizationIntensity * MuellerPolarizer(polarizationTheta);
+        for (int j = 0; j < beam.hwss_comps; ++j)
+            beam.setSP(j, mul(P, beam.getSP(j)));
+    }
+
+    // TODO: Camera/lens effects
+
+    float hwss_mod = 1.0f;
+    if (mHWSSDoMIS)
+    {
+        // MIS spectral contributions
+        const float sum = dot(beam.spectralPDFs, hwss_t(1.f));
+        hwss_mod *= sum > FLT_EPSILON ? beam.spectralPDFs[0] / sum : .0f;
+    }
+    else
+        hwss_mod *= 1.f / float(beam.hwss_comps);
+
+
+    const hwss_t Li = beam.L;
+    const float3 F = max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps) * hwss_mod);
+
+    // Lin Style Resampling Weight: mi(xi) * p_hat(xi) * UCW_{xi}
+    // In initial Resampling, mi is NEE/BSDF MIS weight, p_hat is the rendering-eq value F, UCW is just the path PDF.
+    const float wi = seed.RMISWeight * luminance(F) * pathContribution;
+
+    const bool accept = solveData.initialReservoir.update(wi, seed, luminance(F), sampleNext1D(solveData.sg));
+
+#if DO_DEBUG_VIEW == 1
+    // Write debug views
+    markDebug(solveData, bounceIdx, beam);
+#endif
+    return accept;
+}
+
 
 /** Emissive contributions */
 
@@ -203,6 +270,10 @@ void evalEmissive(inout PLTSolve solveData,
 void evalEmissiveResampling(
     inout PLTSolve solveData,
     const int bounceIdx,
+    const int firstNonDeltaInteractionIdx,
+    const int firstReconnectionableBounceIdx,
+    const float cachedJacobian,
+    const float3 prevPathPosW,
     const BounceData bounce,
     const uint2 pixel,
     const IMaterialInstance bsdf,
@@ -249,7 +320,17 @@ void evalEmissiveResampling(
                 beam.collapseToHeroWavelengthOnly();
 
             forwardUnwind(bounceIdx, pixel, beam);
-            measure(solveData, bounceIdx, bounce.pathContribution, beam);
+
+            PathReconstructionData seed = {};
+            seed.setLightSample(
+                Le, lightPdf, prevPathPosW, dist, -bounce.wi, sd.posW, solveData.wavelength, false, kSourcingAreaFromEmissiveGeometry
+            );
+            seed.setLightType((uint)SampledLightType::Emissive, 1.0f);
+            seed.setPathData(bounceIdx - 1, firstNonDeltaInteractionIdx, firstReconnectionableBounceIdx, DispatchRaysIndex().xy, 0u);
+            seed.setJacobianCounterpart(cachedJacobian);
+            seed.setRMISWeight(0.5f); // TODO: replace with actual MIS weight
+
+            initialResampling(solveData, bounceIdx, bounce.pathContribution, seed, beam);
         }
     }
 }
@@ -295,6 +376,68 @@ void evalNEE(inout PLTSolve solveData,
     // Forward unwind beam
     forwardUnwind(bounceIdx, pixel, beam);
     measure(solveData, bounceIdx, bounce.pathContribution, beam);
+}
+
+void evalNEEwithUCW(
+    inout PLTSolve solveData,
+    const int bounceIdx,
+    const BounceData bounce,
+    const uint2 pixel,
+    const VertexData V,
+    const uint materialID,
+    const IMaterialInstance bsdf,
+    inout PLTBeam beam,
+    const bool NEEEvalCurrentVertex,
+    const float UCW
+)
+{
+    if (NEEEvalCurrentVertex)
+    {
+        let lod = ExplicitLodTextureSampler(0.f);
+        const ShadingData forwardSd = gScene.materials.prepareShadingData(V, materialID, -beam.r, lod);
+
+        // Propagate beam from source and evaluate non-delta BSDF interaction
+        beam.propagate(forwardSd.posW);
+        bsdf.eval(forwardSd, bounce.wi, (uint)LobeType::NonDelta, beam);
+
+        // Spectral MIS
+        forwardHWSSMis(bsdf, forwardSd, bounce.wi, (uint)LobeType::NonDelta, beam);
+    }
+
+    // Forward unwind beam
+    forwardUnwind(bounceIdx, pixel, beam);
+    measure(solveData, bounceIdx, UCW, beam);
+}
+
+bool evalNEEResampling(
+    inout PLTSolve solveData,
+    const int bounceIdx,
+    const BounceData bounce,
+    const uint2 pixel,
+    const VertexData V,
+    const uint materialID,
+    const IMaterialInstance bsdf,
+    PathReconstructionData seed,
+    inout PLTBeam beam,
+    const bool NEEEvalCurrentVertex
+)
+{
+    if (NEEEvalCurrentVertex)
+    {
+        let lod = ExplicitLodTextureSampler(0.f);
+        const ShadingData forwardSd = gScene.materials.prepareShadingData(V, materialID, -beam.r, lod);
+
+        // Propagate beam from source and evaluate non-delta BSDF interaction
+        beam.propagate(forwardSd.posW);
+        bsdf.eval(forwardSd, bounce.wi, (uint)LobeType::NonDelta, beam);
+
+        // Spectral MIS
+        forwardHWSSMis(bsdf, forwardSd, bounce.wi, (uint)LobeType::NonDelta, beam);
+    }
+
+    // Forward unwind beam
+    forwardUnwind(bounceIdx, pixel, beam);
+    return initialResampling(solveData, bounceIdx, bounce.pathContribution, seed, beam);
 }
 
 void NEE(inout PLTSolve solveData,
@@ -421,7 +564,154 @@ void NEE(inout PLTSolve solveData,
     evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex);
 }
 
-void NEEResampling(
+bool NEEResampling(
+    inout PLTSolve solveData,
+    const int bounceIdx,
+    const int firstNonDeltaInteractionIdx,
+    const int firstReconnectionableBounceIdx,
+    const float cachedJacobian,
+    const bool needRMIS,
+    const BounceData bounce,
+    const uint2 pixel,
+    const TriangleHit triangleHit,
+    const ShadingData sd,
+    const VertexData V,
+    const IMaterialInstance bsdf,
+    const BSDFProperties bsdfProp
+)
+{
+    const uint lobes = bsdf.getLobes(sd);
+
+    const bool allowMSOnCurrentVertex =
+        kDoMSonNEE && bounceIdx > 0 && !bounce.flags.lastBounceWasDelta && bsdfProp.canManifoldWalkReflective;
+    // NEE on non-delta lobes, or manifold walk on a delta lobe
+    const bool sampleReflection = (lobes & (uint)LobeType::NonDeltaReflection) != 0 || allowMSOnCurrentVertex;
+    const bool sampleTransmission = (lobes & (uint)LobeType::NonDeltaTransmission) != 0;
+
+    if (!sampleReflection && !sampleTransmission)
+        return 0.0f;
+
+    // Sample a light.
+    LightSample ls;
+    PathReconstructionData seed;
+    const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
+    const bool valid = generateLightSample(
+        sd, sampleReflection, sampleTransmission, solveData.sg, solveData.tilesg, solveData.wavelength, importanceSampleSpectrum, seed, ls
+    );
+    if (!valid || !any(ls.beam.L > .0f))
+        return 0.0f;
+
+    // Update HWSS component count of sourced beam
+    if (!mHWSSDoMIS && bounce.flags.dispersiveDeltaSegment)
+        ls.beam.collapseToHeroWavelengthOnly();
+
+    // Do we do MIS?
+    bool doMis = kDoMIS && ls.lightType != (uint)SampledLightType::Analytic;
+    // Do we need to eval current vertex on forward unwind? (Manifold sampling might involve current vertex)
+    bool evalCurrentVertex = true;
+
+    // Check visibility, or do MNEE
+    const int maxMSBounces = int(mMaxBounces) - bounceIdx;
+    let visRayDesc = ls.getVisibilityRay();
+    if (!kDoMSonNEE || maxMSBounces <= 0)
+    {
+        if (!visibilityRay(visRayDesc))
+            return 0.0f;
+
+        // MIS?
+        if (doMis)
+        {
+            const float bsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
+            ls.beam.scale(MISWeight(ls.pdf, bsdfPdf));
+        }
+    }
+    else
+    {
+        /** Manifold sampling on NEE
+         */
+
+        const float3 lightDir = -ls.beam.r;
+        float MISBsdfPdf;
+
+        ManifoldSampleData msresult = ManifoldSampleData(ls.beam.wavelengths.x);
+
+        // Are we doing MS on this vertex (e.g., delta lobe) as well? (Never on initial bounce)
+        const bool isReflection = dot(sd.N, lightDir) * dot(sd.N, sd.V) > .0f;
+        const bool currentVertexMS = isReflection && allowMSOnCurrentVertex;
+
+        if (currentVertexMS)
+        {
+            if (!manifoldSampleVertex(bounce.hit, triangleHit, sd, bsdf, lightDir, solveData.sg, msresult) ||
+                (msresult.hits[0].lobe & (uint)LobeType::Reflection) == 0)
+                return 0.0f;
+        }
+
+        // Do MS
+        const float3 origin = !currentVertexMS ? V.posW : solveData.pathOrigin;
+        const bool mneeOk =
+            manifoldNEESample(visRayDesc, origin, ls.beam.posW, lightDir, ls.beam.distant, maxMSBounces, solveData.sg, msresult);
+
+#if DO_DEBUG_VIEW == 1
+        // MNEE debug views
+        writeDebugOutputCC(DebugViewType::mnee_iterations, solveData, msresult.iterations / float(kMNEEMaxIterations));
+        if (msresult.hitCount > 0 && mneeOk)
+            writeDebugOutput(
+                DebugViewType::mnee_bounces, solveData,
+                msresult.hitCount == 0   ? float3(.0f)
+                : msresult.hitCount == 1 ? float3(0, 0.3, 1)
+                                         : float3(1, 0, 0)
+            );
+#endif
+
+        if (!mneeOk || msresult.pdf < 1e-6f)
+            return 0.0f;
+
+        // If hitcount is 0, then this is a simple NEE, otherwise need to evaluate the found connections.
+        if (msresult.hitCount > 0)
+        {
+            // If the MS path is dispersive, reduce to single-wavelength beam
+            if (!mHWSSDoMIS && msresult.dispersive)
+                ls.beam.collapseToHeroWavelengthOnly();
+            if (!ls.beam.distant)
+            {
+                ls.dir = msresult.woLastHitToLight;
+                // Rotate beam towards the new last interaction point
+                ls.beam.r = -msresult.woLastHitToLight;
+                ls.beam.t = perp_stark(ls.beam.r);
+            }
+
+            // MS pdf
+            ls.beam.scale(1.f / msresult.pdf);
+            // Evaluate MS path
+            manifoldForwardUnwind(msresult, origin, ls.beam);
+
+            // Special care when MS is done for this vertex
+            if (currentVertexMS)
+            {
+                evalCurrentVertex = false;
+                MISBsdfPdf = bounce.lastNonDeltaPdf;
+            }
+        }
+
+        // MIS
+        if (doMis)
+        {
+            // MIS BSDF pdf for MS that involves the current vertex was computed above
+            if (msresult.hitCount == 0 || !currentVertexMS)
+                MISBsdfPdf = bsdf.pdf(sd, ls.dir, ls.beam.wavelengths.x);
+            ls.beam.scale(MISWeight(ls.pdf, MISBsdfPdf * msresult.pdf));
+        }
+    }
+    seed.setPathData(bounceIdx, firstNonDeltaInteractionIdx, firstReconnectionableBounceIdx, DispatchRaysIndex().xy, 0u);
+    seed.setJacobianCounterpart(cachedJacobian);
+    seed.setRMISWeight(needRMIS?0.5f:1.0f); // TODO: replace with actual MIS weight
+
+    // Finally, evaluate NEE contributions
+    return evalNEEResampling(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, seed, ls.beam, evalCurrentVertex);
+    // return ls.pdf;
+}
+
+void Retrace(
     inout PLTSolve solveData,
     const int bounceIdx,
     const BounceData bounce,
@@ -446,11 +736,8 @@ void NEEResampling(
 
     // Sample a light.
     LightSample ls;
-    PathReconstructionData _dummy;
     const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
-    const bool valid = generateLightSample(
-        sd, sampleReflection, sampleTransmission, solveData.sg, solveData.tilesg, solveData.wavelength, importanceSampleSpectrum, _dummy, ls
-    );
+    const bool valid = regenerateSample(solveData.initialReservoir.s, ls);
     if (!valid || !any(ls.beam.L > .0f))
         return;
 
@@ -557,7 +844,7 @@ void NEEResampling(
     }
 
     // Finally, evaluate NEE contributions
-    evalNEE(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex);
+    evalNEEwithUCW(solveData, bounceIdx, bounce, pixel, V, sd.materialID, bsdf, ls.beam, evalCurrentVertex, solveData.initialReservoir.evalUCW());
 }
 
 
@@ -638,11 +925,16 @@ void main() {
 
     // Evaluate all bounces
     PLTSolve solveData = PLTSolve(sg, tilesg, samplingWavelength);
+    float3 selectedPathOrigin  = float3(0.f);
+    float3 selectedPathNormal  = float3(0.f);
     // const int Max = kUseReSTIRPT ? 1 : mMaxBounces;
 
     int firstReconnectionableBounceIdx = -1;
     int firstNonDeltaInteractionIdx = -1;
     float cachedJacobian = 1.f;
+    float lastNEESamplePdf = 0.f;
+    BounceData bounce = readBounce(0, pixel);
+    BounceData nextBounceCache = {};
 
     // Cache previous data
     uint prevBsdfLobeType = (uint)LobeType::None;
@@ -651,7 +943,8 @@ void main() {
 
     [unroll]
     for (int p=0;;++p) {
-        const BounceData bounce = readBounce(p, pixel);
+        if(p!=mMaxBounces)
+            nextBounceCache = readBounce(p+1, pixel);
 
         // Miss?
         if (bounce.flags.miss)
@@ -659,7 +952,9 @@ void main() {
             if (p <= 1 || !kUseReSTIRPT)
                 onMiss(solveData, p, bounce, pixel);
             else
-                onMissResampling(solveData, p, bounce, pixel);
+            {
+                // onMissResampling(solveData, p, bounce, pixel);
+            }
             break;
         }
 
@@ -692,20 +987,30 @@ void main() {
         const bool isNonDelta = (bounce.sampledBsdfLobe & (uint)LobeType::NonDelta) != 0;
         firstNonDeltaInteractionIdx = isNonDelta && firstNonDeltaInteractionIdx == -1 ? p : firstNonDeltaInteractionIdx;
 
+        const bool didNEE = wasNEEAvailable(p, bounce.flags);
+        const bool needRMISWeight = kUseEmissiveLights && bsdfProp.isEmissive && didNEE;
+
+
+        bool accept = false;
         // NEE
         if (kDoNEE) {
             if(p==0 || !kUseReSTIRPT)
                 NEE(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
             else
-                NEEResampling(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
+                accept = NEEResampling(solveData, p, firstNonDeltaInteractionIdx, firstReconnectionableBounceIdx, cachedJacobian, false/**TODO:**/, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
         }
 
         // Emissive material?
         const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
-        if(p<=1 || !kUseReSTIRPT)
+
+        if (p <= 1 || !kUseReSTIRPT)
             evalEmissive(solveData, p, bounce, pixel, bsdf, bsdfProp, sd, triangleHit, importanceSampleSpectrum);
         else
-            evalEmissiveResampling(solveData, p, bounce, pixel, bsdf, bsdfProp, sd, triangleHit, importanceSampleSpectrum);
+        {
+            // TODO:
+            // evalEmissiveResampling(solveData, p, bounce, pixel, bsdf, bsdfProp, sd, triangleHit, importanceSampleSpectrum);
+        }
+
 
 
         // Geometry debug info
@@ -723,83 +1028,35 @@ void main() {
             break;
         solveData.pathOrigin = v.posW;
         solveData.pathNormal = sd.N;
+        selectedPathOrigin = accept ? solveData.pathOrigin : selectedPathOrigin;
+        selectedPathNormal = accept ? solveData.pathNormal : selectedPathNormal;
 
         // Update previous data
         prevBsdfLobeType = bounce.sampledBsdfLobe;
         prevPosW = v.posW;
         prevBsdfPdf = bounce.lastNonDeltaPdf;
+        bounce = nextBounceCache;
     }
 
-    if(kUseReSTIRPT && false){   // Resampling
-        int firstReconnectionableBounceIdx = -1;
-        int firstNonDeltaInteractionIdx = -1;
-        float cachedJacobian = 1.f;
+    if (kUseReSTIRPT)
+    {
+        const int p = solveData.initialReservoir.s.lastBounceIdx;
+        const BounceData bounce = readBounce(p, pixel);
 
-        // Cache previous data
-        uint prevBsdfLobeType = (uint)LobeType::None;
-        float prevBsdfPdf = 1.f;
-        float3 prevPosW = gScene.camera.data.posW;
+        // Process hit data
+        const TriangleHit triangleHit = TriangleHit(bounce.hit);
+        const VertexData v = gScene.getVertexData(triangleHit);
+        const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+        let lod = ExplicitLodTextureSampler(0.f);
 
-        for (int p = 1;; p++)
-        {
-            const BounceData bounce = readBounce(p, pixel);
-            if(bounce.flags.miss)
-            {
-                if (p > 1) // Skip Direct Illumination
-                    onMissResampling(solveData, p, bounce, pixel);
-                break;
-            }
+        const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
+        let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+        const BSDFProperties bsdfProp = bsdf.getProperties(sd);
+        solveData.pathNormal = selectedPathNormal;
+        solveData.pathOrigin = selectedPathOrigin;
 
-            // Process hit data
-            const TriangleHit triangleHit = TriangleHit(bounce.hit);
-            const VertexData v = gScene.getVertexData(triangleHit);
-            const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
-            let lod = ExplicitLodTextureSampler(0.f);
-
-            const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
-            let bsdf = gScene.materials.getMaterialInstance(sd, lod);
-            const BSDFProperties bsdfProp = bsdf.getProperties(sd);
-
-            // Reconnection Ok?
-            const bool reconnectionOk =
-                PathReconstructionData::isReconnectionable(prevBsdfLobeType, bounce.sampledBsdfLobe, prevPosW, v.posW);
-
-            // If this is first reconnectionable bounce, we need to set information for reconnection.
-            const bool shouldReconnect = reconnectionOk && firstReconnectionableBounceIdx == -1 && p > 0;
-
-            // Jacobian counterpart
-            cachedJacobian = shouldReconnect ? PathReconstructionData::computeJacobianCounterpart(
-                                                   prevBsdfPdf, bounce.lastNonDeltaPdf, dot(bounce.wi, sd.N), prevPosW, v.posW
-                                               )
-                                             : cachedJacobian;
-
-            // Rc Index
-            firstReconnectionableBounceIdx = shouldReconnect ? p : firstReconnectionableBounceIdx;
-
-            // Non-delta index
-            const bool isNonDelta = (bounce.sampledBsdfLobe & (uint)LobeType::NonDelta) != 0;
-            firstNonDeltaInteractionIdx = isNonDelta && firstNonDeltaInteractionIdx == -1 ? p : firstNonDeltaInteractionIdx;
-
-            // Emissive material?
-            const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
-            const bool shouldMIS = kUseEmissiveLights && bsdfProp.isEmissive && (kDoMIS || !wasNEEAvailable(p, bounce.flags));
-            if(p>1) // Skip Direct Illumination
-                evalEmissiveResampling(solveData, p, bounce, pixel, bsdf, bsdfProp, sd, triangleHit, importanceSampleSpectrum);
-
-            NEEResampling(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
-
-            if (bounce.flags.terminated || p == mMaxBounces)
-                break;
-            solveData.pathOrigin = v.posW;
-            solveData.pathNormal = sd.N;
-
-            // Update previous data
-            prevBsdfLobeType = bounce.sampledBsdfLobe;
-            prevPosW = v.posW;
-            prevBsdfPdf = bounce.lastNonDeltaPdf;
-        }
+        Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
     }
-
 
     gOutputColor[pixel] = float4(solveData.Lrgb, 1.f);
 

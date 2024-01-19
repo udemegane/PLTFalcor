@@ -43,6 +43,7 @@ struct PathReconstructionData
                                         ///  Note: Very careful when using this. The seed is important for PSS
                                         ///  random-replay. The seed is exactly the same as the one which was
                                         ///  used to generate the path.
+    float RMISWeight;                   ///< MIS weight for the resampling of the path.
 
     [mutating]
     void setLightSample(
@@ -93,6 +94,12 @@ struct PathReconstructionData
     void setJacobianCounterpart(float jacobianCounterpart)
     {
         this.jacobianCounterpart = jacobianCounterpart;
+    }
+
+    [mutating]
+    void setRMISWeight(float RMISWeight)
+    {
+        this.RMISWeight = RMISWeight;
     }
 
     static bool isReconnectionable(uint prevBsdfLobeType, uint currentBsdfLobeType, float3 prevPosW, float3 currentPosW)

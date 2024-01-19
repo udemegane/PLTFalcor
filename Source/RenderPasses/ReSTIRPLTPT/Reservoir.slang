@@ -9,6 +9,7 @@ struct Reservoir
     float w_sum = 0.0f;
     float p_hat = 0.0f;
     bool debugFlag = false;
+    bool needMis = false;
     PathReconstructionData s;
 
     __init() {

@@ -1,4 +1,5 @@
 import Reservoir;
+import PathHelper;
 uint encodeMortonCode(const uint2 pixel)
 {
     uint result = 0u;
@@ -27,7 +28,7 @@ struct PackedReservoir
     float M;                        // 4B
     float w_sum;                    // 4B
     float p_hat;                    // 4B
-    float _padding;                 // 4B
+    float rmisWeight;                 // 4B
     PackedPathReconstructionData s; // 64B
 
     __init(Reservoir r)
@@ -36,6 +37,7 @@ struct PackedReservoir
         w_sum = r.w_sum;
         p_hat = r.p_hat;
         s = PackedPathReconstructionData(r.s);
+        rmisWeight = r.s.RMISWeight;
     }
     Reservoir unpack()
     {
@@ -44,6 +46,7 @@ struct PackedReservoir
         r.w_sum = w_sum;
         r.p_hat = p_hat;
         r.s = s.unpack();
+        r.s.RMISWeight = rmisWeight;
         return r;
     }
 };
