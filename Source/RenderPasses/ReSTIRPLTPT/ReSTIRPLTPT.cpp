@@ -47,7 +47,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 
 namespace {
     const std::string kSamplePassFileName   = "RenderPasses/ReSTIRPLTPT/pltpt_sample.rt.slang";
-    const std::string kSolvePassFileName    = "RenderPasses/ReSTIRPLTPT/pltpt_solve.rt.slang";
+    const std::string kSolvePassFileName    = "RenderPasses/ReSTIRPLTPT/pltpt_initial_resample.rt.slang";
     const std::string kSpatialReusePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_spatial_reuse.rt.slang";
     const std::string kSpatialRetracePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_spatial_retrace.rt.slang";
     const std::string kTemporalReusePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_temporal_reuse.rt.slang";
