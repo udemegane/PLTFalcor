@@ -30,7 +30,6 @@
 
 #include "pltpt.slangh"
 
-
 // // Outputs
 RWTexture2D<float4> gOutputNormal;
 RWTexture2D<float4> gOutputAlbedo;

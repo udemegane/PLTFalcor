@@ -8,6 +8,7 @@ uint encodeMortonCode(const uint2 pixel)
     {
         result |= ((pixel.x & (1 << i)) << i) | ((pixel.y & (1 << i)) << (i + 1));
     }
+    return result;
 }
 
 void decodeMortonCode(const uint code, out uint2 pixel)

@@ -11,7 +11,9 @@ target_sources(ReSTIRPLTPT PRIVATE
     # pltpt_spatial_retrace.cs.slang
     # pltpt_temporal_reuse.cs.slang
     # pltpt_temporal_retrace.cs.slang
-    # pltpt_final_shading.cs.slang
+    pltpt_final_shading.cs.slang
+    reflect_types.cs.slang
+
     Path.slang
     pltpt_constants.slangh
 

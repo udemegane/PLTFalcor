@@ -64,6 +64,9 @@ private:
     Program::DefineList ReSTIRPLTPT::getDefines() const;
     void parseDictionary(const Dictionary& dict);
     void prepareVars();
+    void temporalResampling(RenderContext* pRenderContext, const RenderData& renderData);
+    void finalShading(RenderContext* pRenderContext, const RenderData& renderData);
+    void endFrame();
 
     // Internal state
     Scene::SharedPtr            mpScene;                        ///< Current scene.
@@ -71,7 +74,7 @@ private:
     EnvMapSampler::SharedPtr    mpEnvMapSampler;
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
-    uint32_t                    mTileSize = 512;                ///< Size of a tile
+    uint32_t                    mTileSize = 256;                ///< Size of a tile
     uint                        mMaxBounces = 8;               ///< Max number of indirect bounces (0 = none).
     Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffer.
 
@@ -84,7 +87,7 @@ private:
     float                       mSourcingAreaFromEmissiveGeometry = 1.f;       ///< Sourcing area for emissive geometry (default - 1mm^2)
     float                       mSourcingMaxBeamOmega = .025f;                   ///< Max diffusivity of sourced beams
 
-    uint                        mHWSS = 4;                      ///< Number of HWSS samples
+    uint                        mHWSS = 1;                      ///< Number of HWSS samples
     bool                        mHWSSDoMIS = true;
 
     bool                        mUseDirectLights = true;
@@ -126,12 +129,14 @@ private:
     };
     tracer_t mSampleTracer, mSolveTracer;
 
+    ComputePass::SharedPtr mpReflectTypes;
     ComputePass::SharedPtr mpSpatialReusePass;
     ComputePass::SharedPtr mpSpatialRetracePass;
     ComputePass::SharedPtr mpTemporalReusePass;
     ComputePass::SharedPtr mpTemporalRetracePass;
     ComputePass::SharedPtr mpFinalShadingPass;
 
+    Texture::SharedPtr mpIndirectIlluminateTexture;
     Buffer::SharedPtr mpRetracedBounceBuffer;
     Buffer::SharedPtr mpIntermediateReservoirs1;
     Buffer::SharedPtr mpIntermediateReservoirs2;

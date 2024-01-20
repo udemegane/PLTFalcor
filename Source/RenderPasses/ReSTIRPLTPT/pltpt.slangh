@@ -39,9 +39,9 @@
 
 #include "ShadowRays.slangh"
 #include "Manifolds.slangh"
-
 import Scene.Raytracing;
 import Scene.Intersection;
+
 import Scene.ShadingData;
 import Scene.Scene;
 
@@ -69,9 +69,14 @@ import Rendering.Utils.DifferentialShadingGeometry;
 
 import ColourCoding;
 
+// #ifndef SampleGenerator
+// #define SampleGenerator ISampleGenerator
+// #endif
 
-cbuffer CB {
-    uint gFrameCount;        // Frame count since scene was loaded.
+cbuffer CB
+{
+    uint gFrameCount; // Frame count since scene was loaded.
+
     EnvMapSampler envMapSampler;
     EmissiveLightSampler emissiveSampler;
 

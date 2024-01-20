@@ -48,11 +48,12 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace {
     const std::string kSamplePassFileName   = "RenderPasses/ReSTIRPLTPT/pltpt_sample.rt.slang";
     const std::string kSolvePassFileName    = "RenderPasses/ReSTIRPLTPT/pltpt_initial_resample.rt.slang";
-    const std::string kSpatialReusePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_spatial_reuse.rt.slang";
+    const std::string kSpatialReusePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_spatial_reuse.cs.slang";
     const std::string kSpatialRetracePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_spatial_retrace.rt.slang";
-    const std::string kTemporalReusePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_temporal_reuse.rt.slang";
+    const std::string kTemporalReusePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_temporal_reuse.cs.slang";
     const std::string kTemporalRetracePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_temporal_retrace.rt.slang";
-    const std::string kFinalShadingPassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_final_shading.rt.slang";
+    const std::string kFinalShadingPassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_final_shading.cs.slang";
+    const std::string kReflectTypesFile = "RenderPasses/ReSTIRPLTPT/reflect_types.cs.slang";
 
     const std::string kShaderModel = "6_5";
 
@@ -64,6 +65,7 @@ namespace {
 
     static constexpr uint kVisibilityRayId = 0;
     static constexpr uint kShadowRayId = 1;
+
 
     const char kInputViewDir[] = "viewW";
 
@@ -472,12 +474,75 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
     }
 
+    // Type Reflection
+    {
+        if(mpReflectTypes==nullptr)
+        {
+             Program::Desc desc;
+            desc.addShaderModules(mpScene->getShaderModules());
+            desc.addTypeConformances(mpScene->getMaterialSystem()->getTypeConformances());
+            desc.addShaderLibrary(kReflectTypesFile).setShaderModel(kShaderModel).csEntry("main");
+
+            auto defines = mpScene->getSceneDefines();
+            defines.add(getDefines());
+            mpReflectTypes = ComputePass::create(mpDevice, desc, defines, true);
+        }
+    }
+
+
     // Bounce buffer
     const auto bounceBufferElements = (mMaxBounces+1u) * mTileSize*mTileSize;
     if (mpBounceBuffer==nullptr || mpBounceBuffer->getElementCount() != (uint32_t)bounceBufferElements) {
         mpBounceBuffer = Buffer::createStructured(this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements, Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false);
         mpBounceBuffer->setName("ReSTIRPLTPT::mpBounceBuffer");
     }
+    if (mpRetracedBounceBuffer==nullptr || mpRetracedBounceBuffer->getElementCount() != (uint32_t)bounceBufferElements) {
+        mpRetracedBounceBuffer = Buffer::createStructured(this->mpDevice.get(), kPerBouncePayloadSizeBytes, (uint32_t)bounceBufferElements, Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false);
+        mpRetracedBounceBuffer->setName("ReSTIRPLTPT::mpRetracedBounceBuffer");
+    }
+
+    // Textures
+    {
+        if(mpIndirectIlluminateTexture==nullptr || mpIndirectIlluminateTexture->getWidth()!=targetDim.x || mpIndirectIlluminateTexture->getHeight()!=targetDim.y){
+            mpIndirectIlluminateTexture = Texture::create2D(
+            this->mpDevice.get(),
+            targetDim.x,
+            targetDim.y,
+            ResourceFormat::RGBA32Float,
+            1u,
+            1u,
+            nullptr,
+            Resource::BindFlags::UnorderedAccess | Resource::BindFlags::ShaderResource);
+        }
+    }
+
+    // Reservoirs
+    {
+        const uint32_t reservoirElements = targetDim.x * targetDim.y;
+        uint32_t kReservoirPayloadSizeBytes = ((6u-mHWSS)%4)*4 + mHWSS*4 + 72u;
+        assert(kReservoirPayloadSizeBytes % 16 == 0);
+
+        if(mpIntermediateReservoirs1==nullptr || mpIntermediateReservoirs1->getElementCount()!=reservoirElements) {
+            mpIntermediateReservoirs1 = Buffer::createStructured(
+                this->mpDevice.get(),
+                sizeof(kReservoirPayloadSizeBytes),
+                reservoirElements,
+                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
+                Buffer::CpuAccess::None, nullptr, false);
+            mpIntermediateReservoirs1->setName("ReSTIRPLTPT::mpIntermediateReservoirs1");
+        }
+
+        if(mpIntermediateReservoirs2==nullptr || mpIntermediateReservoirs2->getElementCount()!=reservoirElements){
+            mpIntermediateReservoirs1 = Buffer::createStructured(
+                this->mpDevice.get(),
+                sizeof(kReservoirPayloadSizeBytes),
+                reservoirElements,
+                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
+                Buffer::CpuAccess::None, nullptr, false);
+            mpIntermediateReservoirs1->setName("ReSTIRPLTPT::mpIntermediateReservoirs2");
+        }
+    }
+
 
     auto defines = getDefines();
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
@@ -544,13 +609,72 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
+    finalShading(pRenderContext, renderData);
 
-    mFrameCount++;
+    endFrame();
+}
+
+void ReSTIRPLTPT::finalShading(RenderContext* pRenderContext, const RenderData& renderData){
+    if(mpFinalShadingPass==nullptr){
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kFinalShadingPassFileName).setShaderModel(kShaderModel).csEntry("main");
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        FALCOR_ASSERT(mpSampleGenerator);
+        auto defines = mpScene->getSceneDefines();
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getValidResourceDefines(kSolveOutputChannels, renderData));
+        defines.add(getDefines());
+        defines.add("DISABLE_SAMPLERS", "1");
+        defines.add("DISABLE_RAYTRACING", "1");
+
+        // if(mpEnvMapSampler)
+            // defines.add(mpEnvMapSampler->getDefines());
+        mpFinalShadingPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    mpFinalShadingPass->getProgram()->addDefines(mpScene->getSceneDefines());
+    mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kSolveOutputChannels, renderData));
+    mpFinalShadingPass->getProgram()->addDefines(getDefines());
+
+    FALCOR_ASSERT(mpIndirectIlluminateTexture)
+
+    auto var = mpFinalShadingPass->getRootVar();
+
+
+    var["gIndirectIllumination"] = mpIndirectIlluminateTexture;
+    var["gOutputColor"]=renderData.getTexture(kSolveOutputChannels[0].name);
+    auto varSetter = [&](auto& var) {
+        var["CB"]["gFrameCount"] = mFrameCount;
+        var["CB"]["kOutputSize"] = renderData.getDefaultTextureDims();
+
+        if (mDebugView != 0)
+            var["CB"]["kDebugViewIntensity"] = mDebugViewIntensity;
+    };
+    varSetter(var);
+    var["gScene"] = mpScene->getParameterBlock();
+
+    mpScene->setRaytracingShaderData(pRenderContext, var);
+    mpFinalShadingPass->execute(pRenderContext, uint3(mpIndirectIlluminateTexture->getWidth(), mpIndirectIlluminateTexture->getHeight(), 1));
+    // FALCOR_ASSERT(mpIntermediateReservoirs1);
+    // FALCOR_ASSERT(mpIntermediateReservoirs2);
 }
 
 void ReSTIRPLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) {
-    mSampleTracer = { nullptr, nullptr, nullptr };
-    mSolveTracer = { nullptr, nullptr, nullptr };
+    mpReflectTypes = nullptr;
+
+    mpBounceBuffer = nullptr;
+    mpRetracedBounceBuffer = nullptr;
+
+    // mSampleTracer = { nullptr, nullptr, nullptr };
+    // mSolveTracer = { nullptr, nullptr, nullptr };
+
+    mpTemporalRetracePass = nullptr;
+    mpTemporalReusePass = nullptr;
+    mpSpatialRetracePass = nullptr;
+    mpSpatialReusePass = nullptr;
+
+    mpIndirectIlluminateTexture = nullptr;
 
     mpEnvMapSampler = nullptr;
     mpSampleGenerator = nullptr;
@@ -620,4 +744,10 @@ void ReSTIRPLTPT::prepareVars() {
         mpSampleGenerator->setShaderData(mSampleTracer.pVars->getRootVar());
         mpSampleGenerator->setShaderData(mSolveTracer.pVars->getRootVar());
     }
+}
+
+void ReSTIRPLTPT::endFrame()
+{
+    mFrameCount++;
+
 }

@@ -1,67 +1,48 @@
 #pragma once
 
+// #include "pltpt.slangh"
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
-
-#include "pltpt_constants.slangh"
-#include "pltpt_debug.slangh"
-
-#include "DebugViewType.slangh"
-
-#include "ShadowRays.slangh"
-#include "Manifolds.slangh"
-
-import Scene.ShadingData;
 import Scene.Scene;
-
-import Utils.HWSS;
-import Utils.Math.MathHelpers;
+import Scene.HitInfo;
+import Scene.HitInfoType;
+import Scene.RaytracingInline;
 import Utils.Sampling.SampleGenerator;
-import Utils.Geometry.GeometryHelpers;
-import Utils.Color.SpectrumSampler;
-import Utils.Color.SpectrumUtils;
 
-import Path;
-import PathHelper;
-import Reservoir;
-import Rendering.PLT;
+import LocalUtils;
 
-import Rendering.Lights.LightHelpers;
-import Rendering.Lights.EmissiveLightSampler;
-import Rendering.Lights.EmissiveLightSamplerHelpers;
-import Rendering.Lights.EnvMapSampler;
 
-import Rendering.Materials.BxDF;
-import Rendering.Materials.PLT.Mueller;
+// Inputs
+RWTexture2D<float4> gIndirectIllumination;
 
-import Rendering.Utils.LightsSamplingUtils;
-
-import ColourCoding;
-
+// Outputs
+RWTexture2D<float4> gOutputColor;
 
 cbuffer CB
 {
     uint gFrameCount; // Frame count since scene was loaded.
-    EnvMapSampler envMapSampler;
-    EmissiveLightSampler emissiveSampler;
 
     uint2 kOutputSize;
-    uint2 kTile;
-
-    // Area on emissive geometry from which we source beams
-    float kSourcingAreaFromEmissiveGeometry;
-    // Max diffusivity of sourced beams
-    float kSourcingMaxBeamOmega;
 
 #if DO_DEBUG_VIEW == 1
     float kDebugViewIntensity;
 #endif
 }
 
-// Inputs
-Texture2D<float4> gIndirectIllumination;
-Texture2D<float4> gDirectIllumination;
 
-// Outputs
-RWTexture2D<float4> gOutputColor;
+[numthreads(16, 16, 1)]
+void main(
+    uint3 groupId: SV_GroupID,
+    uint3 groupThreadId: SV_GroupThreadID,
+    uint3 dispatchThreadId: SV_DispatchThreadID,
+    uint3 groupIndex: SV_GroupIndex
+)
+{
+    uint2 pixel = dispatchThreadId.xy;
+    if (any(pixel >= kOutputSize.xy))
+        return;
+    float a;
+    // SampleGenerator sg = SampleGenerator(pixel, gFrameCount * gFrameCount);
+    gOutputColor[pixel] += gIndirectIllumination[pixel];
 
+}
