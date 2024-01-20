@@ -145,7 +145,8 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
     }
     else
         hwss_mod *= 1.f / float(beam.hwss_comps);
-    beam.scale(isRetracing ? (solveData.initialReservoir.evalUCW()) : pathContribution * hwss_mod);
+        // TODO:
+    beam.scale(isRetracing ? (solveData.initialReservoir.evalUCW()[0]) : pathContribution * hwss_mod);
 
     // 間違いなく色の何かがおかしい
     // リサンプリング計算の単位?は合っている気がする
@@ -202,16 +203,17 @@ bool initialResampling(
 
     // TODO: Camera/lens effects
 
-    //　これは、UCWによるもので、リサンプリングがすべて終わってから計算する
     hwss_t hwss_mod = 1.0f;
-    if (mHWSSDoMIS)
-    {
+    // リサンプリングでは必ず波長MIS重みを使わないとへんなことになる
+    // if (mHWSSDoMIS || kUseReSTIRPT)
+    // {
         // MIS spectral contributions
-        const float sum = dot(beam.spectralPDFs, hwss_t(1.f));
-        hwss_mod *= sum > FLT_EPSILON ? beam.spectralPDFs[0] / sum : .0f;
-    }
-    else
-        hwss_mod *= 1.f / float(beam.hwss_comps);
+    const float sum = dot(beam.spectralPDFs, hwss_t(1.f));
+    hwss_mod *= sum > FLT_EPSILON ? beam.spectralPDFs[0] / sum : .0f;
+    // }
+    // else
+    //     hwss_mod *= 1.f / float(beam.hwss_comps);
+
 
     const hwss_t Li = beam.L;
 
