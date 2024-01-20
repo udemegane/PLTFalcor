@@ -77,7 +77,7 @@ private:
     uint32_t                    mTileSize = 256;                ///< Size of a tile
     uint                        mMaxBounces = 8;               ///< Max number of indirect bounces (0 = none).
     Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffer.
-
+    uint32_t                    mReservoirPayloadSizeBytes;
     // Configuration
     uint32_t                    mSelectedSampleGenerator = SAMPLE_GENERATOR_DEFAULT;            ///< Which pseudorandom sample generator to use.
 

@@ -51,7 +51,7 @@ namespace {
     const std::string kSpatialReusePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_spatial_reuse.cs.slang";
     const std::string kSpatialRetracePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_spatial_retrace.rt.slang";
     const std::string kTemporalReusePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_temporal_reuse.cs.slang";
-    const std::string kTemporalRetracePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_temporal_retrace.rt.slang";
+    const std::string kTemporalRetracePassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_temporal_retrace.cs.slang";
     const std::string kFinalShadingPassFileName = "RenderPasses/ReSTIRPLTPT/pltpt_final_shading.cs.slang";
     const std::string kReflectTypesFile = "RenderPasses/ReSTIRPLTPT/reflect_types.cs.slang";
 
@@ -521,25 +521,27 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         const uint32_t reservoirElements = targetDim.x * targetDim.y;
         uint32_t kReservoirPayloadSizeBytes = ((6u-mHWSS)%4)*4 + mHWSS*4 + 72u;
         assert(kReservoirPayloadSizeBytes % 16 == 0);
+        const bool payloadSizeChanged = mReservoirPayloadSizeBytes != kReservoirPayloadSizeBytes;
+        mReservoirPayloadSizeBytes = payloadSizeChanged ? kReservoirPayloadSizeBytes : mReservoirPayloadSizeBytes;
 
-        if(mpIntermediateReservoirs1==nullptr || mpIntermediateReservoirs1->getElementCount()!=reservoirElements) {
+        if(mpIntermediateReservoirs1==nullptr || mpIntermediateReservoirs1->getElementCount()!=reservoirElements || payloadSizeChanged) {
             mpIntermediateReservoirs1 = Buffer::createStructured(
                 this->mpDevice.get(),
-                sizeof(kReservoirPayloadSizeBytes),
+                sizeof(mReservoirPayloadSizeBytes),
                 reservoirElements,
                 Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
                 Buffer::CpuAccess::None, nullptr, false);
             mpIntermediateReservoirs1->setName("ReSTIRPLTPT::mpIntermediateReservoirs1");
         }
 
-        if(mpIntermediateReservoirs2==nullptr || mpIntermediateReservoirs2->getElementCount()!=reservoirElements){
-            mpIntermediateReservoirs1 = Buffer::createStructured(
+        if(mpIntermediateReservoirs2==nullptr || mpIntermediateReservoirs2->getElementCount()!=reservoirElements || payloadSizeChanged){
+            mpIntermediateReservoirs2 = Buffer::createStructured(
                 this->mpDevice.get(),
-                sizeof(kReservoirPayloadSizeBytes),
+                sizeof(mReservoirPayloadSizeBytes),
                 reservoirElements,
                 Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
                 Buffer::CpuAccess::None, nullptr, false);
-            mpIntermediateReservoirs1->setName("ReSTIRPLTPT::mpIntermediateReservoirs2");
+            mpIntermediateReservoirs2->setName("ReSTIRPLTPT::mpIntermediateReservoirs2");
         }
     }
 
@@ -609,9 +611,86 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
     }
 
+    temporalResampling(pRenderContext, renderData);
+
     finalShading(pRenderContext, renderData);
 
     endFrame();
+}
+
+void ReSTIRPLTPT::temporalResampling(RenderContext* pRenderContext, const RenderData& renderData){
+    if(mpTemporalRetracePass==nullptr){
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kTemporalRetracePassFileName).setShaderModel(kShaderModel).csEntry("main");
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        FALCOR_ASSERT(mpSampleGenerator);
+        auto defines = mpScene->getSceneDefines();
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getValidResourceDefines(kSolveOutputChannels, renderData));
+        defines.add(getDefines());
+
+        if(mpEmissiveSampler)
+            defines.add(mpEmissiveSampler->getDefines());
+        mpTemporalRetracePass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    if(mpTemporalReusePass==nullptr){
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kTemporalReusePassFileName).setShaderModel(kShaderModel).csEntry("main");
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        FALCOR_ASSERT(mpSampleGenerator);
+        auto defines = mpScene->getSceneDefines();
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getValidResourceDefines(kSolveOutputChannels, renderData));
+        defines.add(getDefines());
+
+        if(mpEmissiveSampler)
+            defines.add(mpEmissiveSampler->getDefines());
+
+        mpTemporalReusePass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    mpTemporalRetracePass->getProgram()->addDefines(mpScene->getSceneDefines());
+    mpTemporalRetracePass->getProgram()->addDefines(getDefines());
+    mpTemporalReusePass->getProgram()->addDefines(mpScene->getSceneDefines());
+    mpTemporalReusePass->getProgram()->addDefines(getDefines());
+
+    FALCOR_ASSERT(mpIntermediateReservoirs1)
+    FALCOR_ASSERT(mpIntermediateReservoirs2)
+    FALCOR_ASSERT(mpRetracedBounceBuffer)
+
+    auto retraceVar = mpTemporalRetracePass->getRootVar();
+    auto reuseVar = mpTemporalReusePass->getRootVar();
+
+
+    reuseVar["gIndirectIllumination"]=mpIndirectIlluminateTexture;
+    auto varSetter = [&](auto& var) {
+        var["CB"]["gFrameCount"] = mFrameCount;
+        var["CB"]["kOutputSize"] = renderData.getDefaultTextureDims();
+        var["CB"]["kSourcingAreaFromEmissiveGeometry"] = mSourcingAreaFromEmissiveGeometry;
+        var["CB"]["kSourcingMaxBeamOmega"] = mSourcingMaxBeamOmega;
+
+        if (mpEnvMapSampler)    mpEnvMapSampler->setShaderData(var["CB"]["envMapSampler"]);
+        if (mpEmissiveSampler)  mpEmissiveSampler->setShaderData(var["CB"]["emissiveSampler"]);
+        if (mDebugView != 0)
+            var["CB"]["kDebugViewIntensity"] = mDebugViewIntensity;
+        var["gPrevReservoirs"] = mpIntermediateReservoirs1;
+        var["gCurrReservoirs"] = mpIntermediateReservoirs2;
+        var["bounceBuffer"] = mpBounceBuffer;
+        var["retracedBounceBuffer"] = mpRetracedBounceBuffer;
+        var["gScene"] = mpScene->getParameterBlock();
+    };
+    varSetter(reuseVar);
+    varSetter(retraceVar);
+
+    mpScene->setRaytracingShaderData(pRenderContext, reuseVar);
+    mpScene->setRaytracingShaderData(pRenderContext, retraceVar);
+    mpTemporalRetracePass->execute(pRenderContext, uint3(mpIndirectIlluminateTexture->getWidth(), mpIndirectIlluminateTexture->getHeight(), 1));
+    mpTemporalReusePass->execute(pRenderContext, uint3(mpIndirectIlluminateTexture->getWidth(), mpIndirectIlluminateTexture->getHeight(), 1));
+    // FALCOR_ASSERT(mpIntermediateReservoirs1);
+    // FALCOR_ASSERT(mpIntermediateReservoirs2);
 }
 
 void ReSTIRPLTPT::finalShading(RenderContext* pRenderContext, const RenderData& renderData){
