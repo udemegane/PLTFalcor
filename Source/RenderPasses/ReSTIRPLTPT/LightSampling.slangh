@@ -28,9 +28,10 @@
  **************************************************************************/
 
 #pragma once
-
 #include "pltpt.slangh"
-#include "Reservoir.slang"
+
+import PathHelper;
+import Reservoir;
 
 /** Light sampling */
 

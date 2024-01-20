@@ -1,5 +1,6 @@
 import Reservoir;
 import PathHelper;
+import Utils.HWSS;
 uint encodeMortonCode(const uint2 pixel)
 {
     uint result = 0u;
@@ -22,13 +23,19 @@ void decodeMortonCode(const uint code, out uint2 pixel)
 
 // https://developer.nvidia.com/content/understanding-structured-buffer-performance
 // For efficiency, it is recommended that the size of a structured buffer be a multiple of 16 bytes.
+#ifndef HWSS_SAMPLES
+#define HWSS_SAMPLES 1
+#endif
+static const uint pad_size = (6 - HWSS_SAMPLES)%4;
+typealias reserver_padding = vector<float, pad_size>;
 struct PackedReservoir
 {
-    // Size: 80B
+    // Size: 80B ~ 96B
+    hwss_t p_hat; // 4B ~ 16B
+
     float M;                        // 4B
     float w_sum;                    // 4B
-    float p_hat;                    // 4B
-    float rmisWeight;                 // 4B
+    reserver_padding _pad;          //
     PackedPathReconstructionData s; // 64B
 
     __init(Reservoir r)
@@ -37,7 +44,7 @@ struct PackedReservoir
         w_sum = r.w_sum;
         p_hat = r.p_hat;
         s = PackedPathReconstructionData(r.s);
-        rmisWeight = r.s.RMISWeight;
+        // rmisWeight = r.s.RMISWeight;
     }
     Reservoir unpack()
     {
@@ -46,7 +53,7 @@ struct PackedReservoir
         r.w_sum = w_sum;
         r.p_hat = p_hat;
         r.s = s.unpack();
-        r.s.RMISWeight = rmisWeight;
+        r.s.RMISWeight = 1.0f; // Currently, only NEE resampling is supported, so RMISWeight is always 1.0f
         return r;
     }
 };

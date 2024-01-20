@@ -88,14 +88,14 @@ cbuffer CB {
 #endif
 }
 
-// Inputs
-Texture2D<PackedHitInfo> gVBuffer;
-Texture2D<float4> gViewW; // Optional
+// // Inputs
+// Texture2D<PackedHitInfo> gVBuffer;
+// Texture2D<float4> gViewW; // Optional
 
-// Outputs
-RWTexture2D<float4> gOutputColor;
-RWTexture2D<float4> gOutputNormal;
-RWTexture2D<float4> gOutputAlbedo;
+// // Outputs
+// RWTexture2D<float4> gOutputColor;
+// RWTexture2D<float4> gOutputNormal;
+// RWTexture2D<float4> gOutputAlbedo;
 
 
 static const uint mMaxBounces = MAX_BOUNCES;
@@ -131,45 +131,6 @@ static const bool kUseReSTIRPT = USE_RESTIR_PT;
 static const bool kUseReSTIRPTMIS = USE_RESTIR_PT_MIS;
 static const uint kReSTIRPTReservoirSize = RESTIR_PT_RESERVOIR_SIZE;
 
-/** Bounce storage */
-
-RWStructuredBuffer<BounceData> bounceBuffer;
-
-// Read a bounce
-BounceData readBounce(int p, const uint2 pixel) {
-    const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize)*mTileSize)*(mMaxBounces+1) + p;
-    return bounceBuffer[idx];
-}
-
-// Append a bounce on successful BSDF sample
-void appendBounce(inout Path path,
-                  const PackedHitInfo hitInfo,
-                  const float3 wi,
-                  const uint bsdfSampledLobe) {
-    const uint2 pixel = path.getPixel();
-    const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize)*mTileSize)*(mMaxBounces+1) + path.length;
-
-    BounceData bounce;
-    bounce.flags = path.flags;
-    bounce.hit = hitInfo;
-    bounce.wi = wi;
-    bounce.sampledBsdfLobe = bsdfSampledLobe;
-    bounce.lastNonDeltaPdf = path.lastNonDeltaPdf;
-    bounce.pathContribution = 1.f / (path.pdf * path.thp_modifier);
-
-    bounceBuffer[idx] = bounce;
-}
-
-// Append a bounce on path termination
-void appendBounce(inout Path path, const PackedHitInfo hitInfo, const float3 wi) {
-    appendBounce(path, hitInfo, wi, 0);
-}
-
-// Append a bounce on miss
-void appendBounce(inout Path path, const float3 wi) {
-    PackedHitInfo info = {};
-    appendBounce(path, info, wi, 0);
-}
 
 
 

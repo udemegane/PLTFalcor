@@ -68,8 +68,8 @@ namespace {
     const char kInputViewDir[] = "viewW";
 
     const ChannelList kInputChannels = {
-        { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-        { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
+        // { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
+        // { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
     };
 
     const ChannelList kOutputChannels = {

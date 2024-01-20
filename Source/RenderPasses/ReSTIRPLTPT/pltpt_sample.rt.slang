@@ -26,8 +26,50 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
+#pragma once
 
 #include "pltpt.slangh"
+
+
+// // Outputs
+RWTexture2D<float4> gOutputNormal;
+RWTexture2D<float4> gOutputAlbedo;
+
+/** Bounce storage */
+RWStructuredBuffer<BounceData> bounceBuffer;
+
+
+
+// Append a bounce on successful BSDF sample
+void appendBounce(inout Path path, const PackedHitInfo hitInfo, const float3 wi, const uint bsdfSampledLobe)
+{
+    const uint2 pixel = path.getPixel();
+    const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize) * mTileSize) * (mMaxBounces + 1) + path.length;
+
+    BounceData bounce;
+    bounce.flags = path.flags;
+    bounce.hit = hitInfo;
+    bounce.wi = wi;
+    bounce.sampledBsdfLobe = bsdfSampledLobe;
+    bounce.lastNonDeltaPdf = path.lastNonDeltaPdf;
+    bounce.pathContribution = 1.f / (path.pdf * path.thp_modifier);
+
+    bounceBuffer[idx] = bounce;
+}
+
+// Append a bounce on path termination
+void appendBounce(inout Path path, const PackedHitInfo hitInfo, const float3 wi)
+{
+    appendBounce(path, hitInfo, wi, 0);
+}
+
+// Append a bounce on miss
+void appendBounce(inout Path path, const float3 wi)
+{
+    PackedHitInfo info = {};
+    appendBounce(path, info, wi, 0);
+}
+
 
 
 /** Path construction */

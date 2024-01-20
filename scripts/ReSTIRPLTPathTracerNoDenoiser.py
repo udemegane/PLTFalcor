@@ -11,8 +11,8 @@ def render_graph_ReSTIRPLTPT():
     ReSTIRPLTPT = createPass("ReSTIRPLTPT")
     g.addPass(ReSTIRPLTPT, "ReSTIRPLTPT")
 
-    GBufferRT = createPass("GBufferRT", {'samplePattern': SamplePattern.Halton, 'sampleCount': 16, 'useAlphaTest': True})
-    g.addPass(GBufferRT, "GBufferRT")
+    # GBufferRT = createPass("GBufferRT", {'samplePattern': SamplePattern.Halton, 'sampleCount': 16, 'useAlphaTest': True})
+    # g.addPass(GBufferRT, "GBufferRT")
 
     AccumulatePass = createPass("AccumulatePass", {'enabled': True, 'precisionMode': AccumulatePrecision.Double})
     g.addPass(AccumulatePass, "AccumulatePass")
@@ -22,8 +22,8 @@ def render_graph_ReSTIRPLTPT():
 
     g.addEdge("ReSTIRPLTPT.color", "AccumulatePass.input")
 
-    g.addEdge("GBufferRT.vbuffer", "ReSTIRPLTPT.vbuffer")
-    g.addEdge("GBufferRT.viewW", "ReSTIRPLTPT.viewW")
+    # g.addEdge("GBufferRT.vbuffer", "ReSTIRPLTPT.vbuffer")
+    # g.addEdge("GBufferRT.viewW", "ReSTIRPLTPT.viewW")
 
     g.addEdge("AccumulatePass.output", "ToneMapper.src")
 

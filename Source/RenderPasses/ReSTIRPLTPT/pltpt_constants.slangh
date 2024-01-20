@@ -5,6 +5,10 @@
 #define MAX_BOUNCES 8
 #endif
 
+#ifndef TILE_SIZE
+#define TILE_SIZE 8
+#endif
+
 #ifndef HWSS_MIS
 #define HWSS_MIS true
 #endif
@@ -53,3 +57,29 @@
 #ifndef NEE_USE_PER_TILE_SG_SELECTOR
 #define NEE_USE_PER_TILE_SG_SELECTOR true
 #endif
+
+#ifndef USE_RESTIR_DI
+#define USE_RESTIR_DI false
+#endif
+
+#ifndef RESTIR_DI_INITIAL_SAMPLES
+#define RESTIR_DI_INITIAL_SAMPLES 1
+#endif
+
+#ifndef RESTIR_DI_RESERVOIR_SIZE
+#define RESTIR_DI_RESERVOIR_SIZE 1
+#endif
+
+#ifndef USE_RESTIR_PT
+#define USE_RESTIR_PT false
+#endif
+
+#ifndef USE_RESTIR_PT_MIS
+#define USE_RESTIR_PT_MIS false
+#endif
+
+#ifndef RESTIR_PT_RESERVOIR_SIZE
+#define RESTIR_PT_RESERVOIR_SIZE 1
+#endif
+
+

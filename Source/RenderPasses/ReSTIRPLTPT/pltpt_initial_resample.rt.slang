@@ -26,12 +26,24 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-
+#pragma once
 #include "pltpt.slangh"
-
 #include "LightSampling.slangh"
-// import Reservoir;
-import PathHelper;
+
+
+
+// // Outputs
+RWTexture2D<float4> gOutputColor;
+
+/** Bounce storage */
+RWStructuredBuffer<BounceData> bounceBuffer;
+// Read a bounce
+BounceData readBounce(int p, const uint2 pixel)
+{
+    const uint idx = ((pixel.x % mTileSize) + (pixel.y % mTileSize) * mTileSize) * (mMaxBounces + 1) + p;
+    return bounceBuffer[idx];
+}
+
 
 /** Path measurement */
 
@@ -619,6 +631,7 @@ bool NEEResampling(
     LightSample ls;
     PathReconstructionData seed;
     const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
+    solveData.wavelength = SpectrumSampler.sampleOne(sampleNext1D(solveData.sg));
     const bool valid = generateLightSample(
         sd, sampleReflection, sampleTransmission, solveData.sg, solveData.tilesg, solveData.wavelength, importanceSampleSpectrum, seed, ls
     );
