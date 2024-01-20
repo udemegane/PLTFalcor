@@ -19,7 +19,7 @@ struct Reservoir
     }
 
     [mutating]
-    bool update(const float wi, PathReconstructionData si, const hwss_t p_hat_i, const float rnd)
+    bool update(const float  wi, PathReconstructionData si, const hwss_t p_hat_i, const float rnd)
     {
         w_sum += wi;
         M+=1.0f;
@@ -33,7 +33,7 @@ struct Reservoir
     }
 
     hwss_t evalUCW() {
-        return w_sum / p_hat;
+         return w_sum / p_hat;
     }
 };
 

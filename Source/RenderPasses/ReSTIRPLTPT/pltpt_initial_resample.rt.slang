@@ -127,24 +127,31 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
 
     // TODO: Camera/lens effects
 
-    float hwss_mod = 1.0f;
-    if (mHWSSDoMIS) {
+    hwss_t hwss_mod = 1.0f;
+    if (isRetracing)
+    {
+        // 多分これで合ってる
+        // const float sum = dot(beam.L, hwss_t(1.f));
+        // hwss_mod *= sum > FLT_EPSILON ? beam.L / sum : .0f;
+
+        const float sum = dot(beam.spectralPDFs, hwss_t(1.f));
+        hwss_mod *= sum > FLT_EPSILON ? beam.spectralPDFs / sum : .0f;
+
+    }
+    else if (mHWSSDoMIS) {
         // MIS spectral contributions
         const float sum = dot(beam.spectralPDFs, hwss_t(1.f));
-        hwss_mod *= sum>FLT_EPSILON ? beam.spectralPDFs[0]/sum : .0f;
+        hwss_mod *= sum > FLT_EPSILON ? beam.spectralPDFs / sum : .0f;
     }
     else
         hwss_mod *= 1.f / float(beam.hwss_comps);
+    beam.scale(isRetracing ? (solveData.initialReservoir.evalUCW()) : pathContribution * hwss_mod);
 
-    if (isRetracing)
-    {
-        beam.scale(solveData.initialReservoir.evalUCW());
-        beam.scale(hwss_mod);
-    }
     // 間違いなく色の何かがおかしい
     // リサンプリング計算の単位?は合っている気がする
     const hwss_t Li = beam.L;
-    const float3 Lrgb = max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps) * (isRetracing ? 1.0f : pathContribution*hwss_mod));
+    const float3 Lrgb =
+        max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps) /** * (isRetracing ? 1.0f : 1.0f) **/ );
 
     if (all(isfinite(Lrgb)))
         solveData.Lrgb += Lrgb;
@@ -195,7 +202,8 @@ bool initialResampling(
 
     // TODO: Camera/lens effects
 
-    float hwss_mod = 1.0f;
+    //　これは、UCWによるもので、リサンプリングがすべて終わってから計算する
+    hwss_t hwss_mod = 1.0f;
     if (mHWSSDoMIS)
     {
         // MIS spectral contributions
@@ -205,14 +213,19 @@ bool initialResampling(
     else
         hwss_mod *= 1.f / float(beam.hwss_comps);
 
-    // beam.scale(hwss_mod);
     const hwss_t Li = beam.L;
-    const float Li_comp = sqrt(dot(Li, Li));
-    const float3 F = max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps));
-    const float F_comp = luminance(F) * hwss_mod;
+
+    // Apply initial UCW
+    beam.scale(pathContribution * hwss_mod);
+
+    // const float3 F = max(float3(.0f), SpectrumUtils.spectrumToRgb(beam.L, beam.wavelengths, beam.hwss_comps));
+    // const float F_comp = luminance(F);
+    const float F_comp = length(beam.L);
+
+
     // Lin Style Resampling Weight: mi(xi) * p_hat(xi) * UCW_{xi}
     // In initial Resampling, mi is NEE/BSDF MIS weight, p_hat is the rendering-eq value F, UCW is just the path PDF.
-    const float wi = seed.RMISWeight * Li_comp * pathContribution;
+    const float wi = seed.RMISWeight * beam.L[0];
 
     const bool accept = solveData.initialReservoir.update(wi, seed, Li, sampleNext1D(solveData.sg));
 
