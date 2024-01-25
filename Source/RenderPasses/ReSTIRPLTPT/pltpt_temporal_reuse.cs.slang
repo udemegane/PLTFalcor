@@ -3,6 +3,7 @@
 #include "pltpt_cs.slangh"
 
 import LocalUtils;
+import Reservoir;
 
 RWStructuredBuffer<PackedReservoir> gPrevReservoirs;
 RWStructuredBuffer<PackedReservoir> gCurrReservoirs;
@@ -22,6 +23,15 @@ BounceData readBounce(int p, const uint2 pixel, const bool retraced = false)
         return bounceBuffer[idx];
 }
 
+Reservoir readReservoir(const uint2 pixel, const bool prev = false)
+{
+    const uint idx = encodeMortonCode(pixel);
+    if (!prev)
+        return gCurrReservoirs[idx].unpack();
+    else
+        return gPrevReservoirs[idx].unpack();
+}
+
 
 [numthreads(16, 16, 1)]
 void main(
@@ -34,7 +44,11 @@ void main(
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= kOutputSize.xy))
         return;
-    float a;
+    const Reservoir r = readReservoir(pixel);
+    gIndirectIllumination[pixel] = float4(r.s.posW, 1.0f);
+    // gIndirectIllumination[pixel] = float4(0.0f ,1.0f, 0.f, 1.0f);
+    // float a;
+
     // SampleGenerator sg = SampleGenerator(pixel, gFrameCount * gFrameCount);
     // gOutputColor[pixel] += gIndirectIllumination[pixel];
 

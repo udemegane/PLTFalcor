@@ -1080,12 +1080,10 @@ void main() {
         bounce = nextBounceCache;
     }
 
-
-
+    const float3 di = solveData.Lrgb;
     if (kUseReSTIRPT)
     {
         uint encodedPixel = encodeMortonCode(pixel);
-        // gCurrReservoirs[encodedPixel] = PackedReservoir(solveData.initialReservoir);
 
         const int p = solveData.initialReservoir.s.lastBounceIdx;
         const BounceData bounce = readBounce(p, pixel);
@@ -1103,9 +1101,11 @@ void main() {
         solveData.pathOrigin = selectedPathOrigin;
 
         Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
+        solveData.initialReservoir.s.posW = solveData.Lrgb - di;
+        gCurrReservoirs[encodedPixel] = PackedReservoir(solveData.initialReservoir);
     }
 
-    gOutputColor[pixel] = float4(solveData.Lrgb, 1.f);
+    gOutputColor[pixel] = float4(di, 1.f);
 
 
 #if DO_DEBUG_VIEW==1

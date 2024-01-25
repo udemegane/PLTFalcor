@@ -688,8 +688,8 @@ void ReSTIRPLTPT::temporalResampling(RenderContext* pRenderContext, const Render
         if (mpEmissiveSampler)  mpEmissiveSampler->setShaderData(var["CB"]["emissiveSampler"]);
         if (mDebugView != 0)
             var["CB"]["kDebugViewIntensity"] = mDebugViewIntensity;
-        var["gPrevReservoirs"] = mpIntermediateReservoirs1;
-        var["gCurrReservoirs"] = mpIntermediateReservoirs2;
+        var["gPrevReservoirs"] = mpIntermediateReservoirs2;
+        var["gCurrReservoirs"] = mpIntermediateReservoirs1;
         var["bounceBuffer"] = mpBounceBuffer;
         var["retracedBounceBuffer"] = mpRetracedBounceBuffer;
         var["gScene"] = mpScene->getParameterBlock();
