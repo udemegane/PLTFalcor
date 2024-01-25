@@ -35,16 +35,32 @@ struct PackedReservoir
 // HWSS_SAMPLES == 2 : 80B
 // HWSS_SAMPLES == 3 : 80B
 // HWSS_SAMPLES == 4 : 96B
+#if HWSS_SAMPLES == 1
+    // 4B
+    float L1;
+#endif
 #if HWSS_SAMPLES == 2
-    // Size: 80B
+    // 16B
+    float L1;
+    float L2;
     uint2 _padding;
 #endif
+#if HWSS_SAMPLES == 3
+    // 12B
+    float L1;
+    float L2;
+    float L3;
+#endif
 #if HWSS_SAMPLES == 4
-    // Size: 96B
+    // 24B
+    float L1;
+    float L2;
+    float L3;
+    float L4;
     uint2 _padding;
 #endif
     // Size: 64B ~ 96B
-    hwss_t p_hat; // 4B ~ 16B
+    // hwss_t p_hat; // 4B ~ 16B
 
     float M;                        // 4B
     float w_sum;                    // 4B
@@ -54,7 +70,25 @@ struct PackedReservoir
     {
         M = r.M;
         w_sum = r.w_sum;
-        p_hat = r.p_hat;
+
+#if HWSS_SAMPLES == 1
+        L1 = r.p_hat[0];
+#endif
+#if HWSS_SAMPLES == 2
+        L1 = r.p_hat[0];
+        L2 = r.p_hat[1];
+#endif
+#if HWSS_SAMPLES == 3
+        L1 = r.p_hat[0];
+        L2 = r.p_hat[1];
+        L3 = r.p_hat[2];
+#endif
+#if HWSS_SAMPLES == 4
+        L1 = r.p_hat[0];
+        L2 = r.p_hat[1];
+        L3 = r.p_hat[2];
+        L4 = r.p_hat[3];
+#endif
         s = PackedPathReconstructionData(r.s);
         // rmisWeight = r.s.RMISWeight;
     }
@@ -63,7 +97,25 @@ struct PackedReservoir
         Reservoir r;
         r.M = M;
         r.w_sum = w_sum;
-        r.p_hat = p_hat;
+        r.p_hat = hwss_t(0.0f);
+#if HWSS_SAMPLES == 1
+        r.p_hat[0] = L1;
+#endif
+#if HWSS_SAMPLES == 2
+        r.p_hat[0] = L1;
+        r.p_hat[1] = L2;
+#endif
+#if HWSS_SAMPLES == 3
+        r.p_hat[0] = L1;
+        r.p_hat[1] = L2;
+        r.p_hat[2] = L3;
+#endif
+#if HWSS_SAMPLES == 4
+        r.p_hat[0] = L1;
+        r.p_hat[1] = L2;
+        r.p_hat[2] = L3;
+        r.p_hat[3] = L4;
+#endif
         r.s = s.unpack();
         r.s.RMISWeight = 1.0f; // Currently, only NEE resampling is supported, so RMISWeight is always 1.0f
         return r;

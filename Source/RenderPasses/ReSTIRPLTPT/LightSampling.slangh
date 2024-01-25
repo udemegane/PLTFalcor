@@ -28,7 +28,11 @@
  **************************************************************************/
 
 #pragma once
-#include "pltpt.slangh"
+// #if RAY_QUERY == 1
+// #include "pltpt_cs.slangh"
+// #else
+// #include "pltpt.slangh"
+// #endif
 
 import PathHelper;
 import Reservoir;

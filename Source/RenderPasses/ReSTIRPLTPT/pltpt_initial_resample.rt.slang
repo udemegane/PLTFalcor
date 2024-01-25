@@ -28,7 +28,6 @@
  **************************************************************************/
 #pragma once
 #include "pltpt.slangh"
-#include "LightSampling.slangh"
 import LocalUtils;
 
 // Inputs
@@ -1068,10 +1067,11 @@ void main() {
 
         if (bounce.flags.terminated || p==mMaxBounces)
             break;
-        solveData.pathOrigin = v.posW;
-        solveData.pathNormal = sd.N;
         selectedPathOrigin = accept ? solveData.pathOrigin : selectedPathOrigin;
         selectedPathNormal = accept ? solveData.pathNormal : selectedPathNormal;
+        solveData.pathOrigin = v.posW;
+        solveData.pathNormal = sd.N;
+
 
         // Update previous data
         prevBsdfLobeType = bounce.sampledBsdfLobe;
@@ -1081,28 +1081,33 @@ void main() {
     }
 
     const float3 di = solveData.Lrgb;
+    float3 tmp;
     if (kUseReSTIRPT)
     {
         uint encodedPixel = encodeMortonCode(pixel);
-
-        const int p = solveData.initialReservoir.s.lastBounceIdx;
-        const BounceData bounce = readBounce(p, pixel);
-
-        // Process hit data
-        const TriangleHit triangleHit = TriangleHit(bounce.hit);
-        const VertexData v = gScene.getVertexData(triangleHit);
-        const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
-        let lod = ExplicitLodTextureSampler(0.f);
-
-        const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
-        let bsdf = gScene.materials.getMaterialInstance(sd, lod);
-        const BSDFProperties bsdfProp = bsdf.getProperties(sd);
-        solveData.pathNormal = selectedPathNormal;
-        solveData.pathOrigin = selectedPathOrigin;
-
-        Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
-        solveData.initialReservoir.s.posW = solveData.Lrgb - di;
+        // uint simplePixel = pixel.x + pixel.y * kOutputSize.x;
         gCurrReservoirs[encodedPixel] = PackedReservoir(solveData.initialReservoir);
+        if (false)
+        {
+            const int p = solveData.initialReservoir.s.lastBounceIdx;
+            const BounceData bounce = readBounce(p, pixel);
+
+            // Process hit data
+            const TriangleHit triangleHit = TriangleHit(bounce.hit);
+            const VertexData v = gScene.getVertexData(triangleHit);
+            const uint materialID = gScene.getMaterialID(triangleHit.instanceID);
+            let lod = ExplicitLodTextureSampler(0.f);
+
+            const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
+            let bsdf = gScene.materials.getMaterialInstance(sd, lod);
+            const BSDFProperties bsdfProp = bsdf.getProperties(sd);
+            solveData.pathNormal = selectedPathNormal;
+            solveData.pathOrigin = selectedPathOrigin;
+
+            Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
+            tmp = solveData.Lrgb - di;
+            solveData.initialReservoir.s.posW = tmp;
+        }
     }
 
     gOutputColor[pixel] = float4(di, 1.f);

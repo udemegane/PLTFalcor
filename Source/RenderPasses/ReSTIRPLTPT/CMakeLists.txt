@@ -20,7 +20,7 @@ target_sources(ReSTIRPLTPT PRIVATE
 
     LightSampling.slangh
     ShadowRays.slangh
-    CSShadowRays.slangh
+    InlineRayTracing.slang
     Manifolds.slangh
 
     pltpt_debug.slangh

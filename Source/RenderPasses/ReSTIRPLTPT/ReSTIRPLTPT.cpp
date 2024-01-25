@@ -536,7 +536,7 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         if(mpIntermediateReservoirs1==nullptr || mpIntermediateReservoirs1->getElementCount()!=reservoirElements || payloadSizeChanged) {
             mpIntermediateReservoirs1 = Buffer::createStructured(
                 this->mpDevice.get(),
-                sizeof(mReservoirPayloadSizeBytes),
+                mReservoirPayloadSizeBytes,
                 reservoirElements,
                 Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
                 Buffer::CpuAccess::None, nullptr, false);
@@ -546,7 +546,7 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         if(mpIntermediateReservoirs2==nullptr || mpIntermediateReservoirs2->getElementCount()!=reservoirElements || payloadSizeChanged){
             mpIntermediateReservoirs2 = Buffer::createStructured(
                 this->mpDevice.get(),
-                sizeof(mReservoirPayloadSizeBytes),
+                mReservoirPayloadSizeBytes,
                 reservoirElements,
                 Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
                 Buffer::CpuAccess::None, nullptr, false);

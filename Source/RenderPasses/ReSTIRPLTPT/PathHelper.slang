@@ -144,12 +144,37 @@ enum class PackedComponentsMask: uint
 
 }
 
+#ifndef HWSS_SAMPLES
+#define HWSS_SAMPLES 1
+#endif
+
 struct PackedPathReconstructionData
 {
     //52~64 bytes
     // 4 * 1~4 = 4~16 bytes
-    hwss_t Le; // In default, hwss_t is 4 floats. (16 bytes)
-
+    // hwss_t Le; // In default, hwss_t is 4 floats. (16 bytes)
+#if HWSS_SAMPLES == 1
+    // 4B
+    float L1;
+#endif
+#if HWSS_SAMPLES == 2
+    // 8B
+    float L1;
+    float L2;
+#endif
+#if HWSS_SAMPLES == 3
+    // 12B
+    float L1;
+    float L2;
+    float L3;
+#endif
+#if HWSS_SAMPLES == 4
+    // 16B
+    float L1;
+    float L2;
+    float L3;
+    float L4;
+#endif
     // 4 * 12 = 48 bytes
     float pdf;
     // float origin // Currently dont support dynamic Scene.(If the scene is dynamic, the origin is needed for visibility evaluation.)
@@ -160,8 +185,26 @@ struct PackedPathReconstructionData
     float Size;
     float jacobianCounterpart;
     uint2 packedComponents;
-    __init(PathReconstructionData source) {
-        this.Le = source.Le;
+    __init(PathReconstructionData source)
+    {
+#if HWSS_SAMPLES == 1
+        L1 = source.Le[0];
+#endif
+#if HWSS_SAMPLES == 2
+        L1 = source.Le[0];
+        L2 = source.Le[1];
+#endif
+#if HWSS_SAMPLES == 3
+        L1 = source.Le[0];
+        L2 = source.Le[1];
+        L3 = source.Le[2];
+#endif
+#if HWSS_SAMPLES == 4
+        L1 = source.Le[0];
+        L2 = source.Le[1];
+        L3 = source.Le[2];
+        L4 = source.Le[3];
+#endif
         this.pdf = source.pdf;
         this.distance = source.distance;
         this.encodedDir = ndir_to_oct_equal_area_snorm(source.dir);
@@ -185,7 +228,25 @@ struct PackedPathReconstructionData
 
     PathReconstructionData unpack() {
         PathReconstructionData result = {};
-        result.Le = this.Le;
+        result.Le = hwss_t(0.0f);
+#if HWSS_SAMPLES == 1
+        result.Le[0] = L1;
+#endif
+#if HWSS_SAMPLES == 2
+        result.Le[0] = L1;
+        result.Le[1] = L2;
+#endif
+#if HWSS_SAMPLES == 3
+        result.Le[0] = L1;
+        result.Le[1] = L2;
+        result.Le[2] = L3;
+#endif
+#if HWSS_SAMPLES == 4
+        result.Le[0] = L1;
+        result.Le[1] = L2;
+        result.Le[2] = L3;
+        result.Le[3] = L4;
+#endif
         result.pdf = this.pdf;
         result.distance = this.distance;
         result.dir = oct_to_ndir_equal_area_snorm(this.encodedDir);

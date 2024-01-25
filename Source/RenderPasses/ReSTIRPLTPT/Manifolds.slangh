@@ -29,8 +29,9 @@
 
 #include "Utils/Math/MathConstants.slangh"
 #include "Scene/SceneDefines.slangh"
-
+#ifndef RAY_QUERY
 import Scene.Raytracing;
+#endif
 import Utils.Math.MathHelpers;
 
 import Rendering.PLT;
@@ -112,11 +113,24 @@ bool traceMNEEOccluders<S : ISampleGenerator>(const float3 lightPos,
                                               inout ManifoldSampleData data) {
     const float3 wi = -ray.Direction;
     // Trace hits, insert into hits structure
-    for (;;) {
+    for (;;)
+    {
+#if RAY_QUERY == 1
+        Ray inlineRay = Ray(ray.Origin, ray.Direction, ray.TMin, ray.TMax);
+        HitInfo hitInfo;
+        float hitT;
+        bool isHit = traceRayInline(inlineRay, hitInfo, hitT);
+        if (!isHit)
+            return true;
+        ShadowRayHit hit = {};
+        hit.hitInfo = hitInfo.data;
+        hit.dist = hitT;
+#else
         let hit = shadowRay(ray);
         // Miss?
         if (!hit.isHit)
             return true;
+#endif
         // Too may hits?
         if (data.hitCount>=kMNEEMaxMSOccluders || data.hitCount>=maxMSBounces)
             return false;
