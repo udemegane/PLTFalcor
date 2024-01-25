@@ -27,17 +27,28 @@ void decodeMortonCode(const uint code, out uint2 pixel)
 #ifndef HWSS_SAMPLES
 #define HWSS_SAMPLES 1
 #endif
-static const uint pad_size = (6 - HWSS_SAMPLES)%4;
-typealias reserver_padding = vector<float, pad_size>;
+
+// typealias reserver_padding = vector<float, pad_size>;
 struct PackedReservoir
 {
-    // Size: 80B ~ 96B
+// HWSS_SAMPLES == 1 : 64B
+// HWSS_SAMPLES == 2 : 80B
+// HWSS_SAMPLES == 3 : 80B
+// HWSS_SAMPLES == 4 : 96B
+#if HWSS_SAMPLES == 2
+    // Size: 80B
+    uint2 _padding;
+#endif
+#if HWSS_SAMPLES == 4
+    // Size: 96B
+    uint2 _padding;
+#endif
+    // Size: 64B ~ 96B
     hwss_t p_hat; // 4B ~ 16B
 
     float M;                        // 4B
     float w_sum;                    // 4B
-    reserver_padding _pad;          //
-    PackedPathReconstructionData s; // 64B
+    PackedPathReconstructionData s; // 52~64B
 
     __init(Reservoir r)
     {

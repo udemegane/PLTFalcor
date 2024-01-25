@@ -29,6 +29,7 @@
 #pragma once
 #include "pltpt.slangh"
 #include "LightSampling.slangh"
+import LocalUtils;
 
 // Inputs
 // Texture2D<PackedHitInfo> gVBuffer;
@@ -39,6 +40,8 @@ RWTexture2D<float4> gOutputColor;
 
 /** Bounce storage */
 RWStructuredBuffer<BounceData> bounceBuffer;
+RWStructuredBuffer<PackedReservoir> gCurrReservoirs;
+
 // Read a bounce
 BounceData readBounce(int p, const uint2 pixel)
 {
@@ -1077,8 +1080,13 @@ void main() {
         bounce = nextBounceCache;
     }
 
+
+
     if (kUseReSTIRPT)
     {
+        uint encodedPixel = encodeMortonCode(pixel);
+        // gCurrReservoirs[encodedPixel] = PackedReservoir(solveData.initialReservoir);
+
         const int p = solveData.initialReservoir.s.lastBounceIdx;
         const BounceData bounce = readBounce(p, pixel);
 

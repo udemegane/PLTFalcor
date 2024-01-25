@@ -519,7 +519,16 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
     // Reservoirs
     {
         const uint32_t reservoirElements = targetDim.x * targetDim.y;
-        uint32_t kReservoirPayloadSizeBytes = ((6u-mHWSS)%4)*4 + mHWSS*4 + 72u;
+        const uint32_t kReservoirPayloadSizeBytes = [&]()->uint32_t{
+            if(mHWSS==1)
+                return 64u;
+            else if(mHWSS==2 || mHWSS==3)
+                return 80u;
+            else if(mHWSS==4)
+                return 96u;
+            return 0u;
+        }();
+
         assert(kReservoirPayloadSizeBytes % 16 == 0);
         const bool payloadSizeChanged = mReservoirPayloadSizeBytes != kReservoirPayloadSizeBytes;
         mReservoirPayloadSizeBytes = payloadSizeChanged ? kReservoirPayloadSizeBytes : mReservoirPayloadSizeBytes;
@@ -585,8 +594,10 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         var["bounceBuffer"] = mpBounceBuffer;
     };
 
+    // Bind resources.
     varSetter(mSampleTracer.pVars->getRootVar());
     varSetter(mSolveTracer.pVars->getRootVar());
+    mSolveTracer.pVars->getRootVar()["gCurrReservoirs"] = mpIntermediateReservoirs1;
 
 
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.

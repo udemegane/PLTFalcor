@@ -146,8 +146,11 @@ enum class PackedComponentsMask: uint
 
 struct PackedPathReconstructionData
 {
-    // 16 * 4 = 64 bytes
+    //52~64 bytes
+    // 4 * 1~4 = 4~16 bytes
     hwss_t Le; // In default, hwss_t is 4 floats. (16 bytes)
+
+    // 4 * 12 = 48 bytes
     float pdf;
     // float origin // Currently dont support dynamic Scene.(If the scene is dynamic, the origin is needed for visibility evaluation.)
     float distance;

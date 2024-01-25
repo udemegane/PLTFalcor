@@ -41,7 +41,6 @@ void main(
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= kOutputSize.xy))
         return;
-    float a;
     // SampleGenerator sg = SampleGenerator(pixel, gFrameCount * gFrameCount);
     gOutputColor[pixel] += gIndirectIllumination[pixel];
 
