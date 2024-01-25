@@ -549,12 +549,13 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
     auto defines = getDefines();
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
+    // defines.add(getValidResourceDefines(kInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
 
     if (mpSampleGenerator)  defines.add(mpSampleGenerator->getDefines());
     if (mpEmissiveSampler)  defines.add(mpEmissiveSampler->getDefines());
     mSampleTracer.pProgram->addDefines(defines);
+    mSampleTracer.pProgram->addDefines(getValidResourceDefines(kInputChannels, renderData));
     mSampleTracer.pProgram->addDefines(getValidResourceDefines(kSampleOutputChannels, renderData));
     mSolveTracer.pProgram->addDefines(defines);
     mSolveTracer.pProgram->addDefines(getValidResourceDefines(kSolveOutputChannels, renderData));
@@ -595,7 +596,7 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
             if (solve)  mSolveTracer.pVars->getRootVar()[desc.texname]  = renderData.getTexture(desc.name);
         }
     };
-    for (const auto& channel : kInputChannels)          bind(channel);
+    for (const auto& channel : kInputChannels)          bind(channel, false, false);
     for (const auto& channel : kOutputChannels)         bind(channel);
     for (const auto& channel : kSampleOutputChannels)   bind(channel, true, false);
     for (const auto& channel : kSolveOutputChannels)    bind(channel, false, true);
