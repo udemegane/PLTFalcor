@@ -30,6 +30,7 @@ target_sources(ReSTIRPLTPT PRIVATE
     Reservoir.slang
     PathHelper.slang
     LocalUtils.slang
+    StaticVars.slang
 )
 
 target_copy_shaders(ReSTIRPLTPT RenderPasses/ReSTIRPLTPT)

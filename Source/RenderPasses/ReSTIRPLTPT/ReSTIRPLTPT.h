@@ -74,7 +74,7 @@ private:
     EnvMapSampler::SharedPtr    mpEnvMapSampler;
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
-    uint32_t                    mTileSize = 256;                ///< Size of a tile
+    uint32_t                    mTileSize = 512;                ///< Size of a tile
     uint                        mMaxBounces = 8;               ///< Max number of indirect bounces (0 = none).
     Buffer::SharedPtr           mpBounceBuffer;                 ///< Per-tile bounce buffer.
     uint32_t                    mReservoirPayloadSizeBytes;

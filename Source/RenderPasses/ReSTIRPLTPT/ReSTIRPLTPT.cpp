@@ -70,8 +70,8 @@ namespace {
     const char kInputViewDir[] = "viewW";
 
     const ChannelList kInputChannels = {
-        // { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-        // { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
+        { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
+        { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
     };
 
     const ChannelList kOutputChannels = {
@@ -474,20 +474,20 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
     }
 
-    // Type Reflection
-    {
-        if(mpReflectTypes==nullptr)
-        {
-             Program::Desc desc;
-            desc.addShaderModules(mpScene->getShaderModules());
-            desc.addTypeConformances(mpScene->getMaterialSystem()->getTypeConformances());
-            desc.addShaderLibrary(kReflectTypesFile).setShaderModel(kShaderModel).csEntry("main");
+    // // Type Reflection
+    // {
+    //     if(mpReflectTypes==nullptr)
+    //     {
+    //          Program::Desc desc;
+    //         desc.addShaderModules(mpScene->getShaderModules());
+    //         desc.addTypeConformances(mpScene->getMaterialSystem()->getTypeConformances());
+    //         desc.addShaderLibrary(kReflectTypesFile).setShaderModel(kShaderModel).csEntry("main");
 
-            auto defines = mpScene->getSceneDefines();
-            defines.add(getDefines());
-            mpReflectTypes = ComputePass::create(mpDevice, desc, defines, true);
-        }
-    }
+    //         auto defines = mpScene->getSceneDefines();
+    //         defines.add(getDefines());
+    //         mpReflectTypes = ComputePass::create(mpDevice, desc, defines, true);
+    //     }
+    // }
 
 
     // Bounce buffer
@@ -600,7 +600,7 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
     for (const auto& channel : kSampleOutputChannels)   bind(channel, true, false);
     for (const auto& channel : kSolveOutputChannels)    bind(channel, false, true);
 
-
+    auto tableCache = mSolveTracer.pVars->getShaderTable();
     // Render
     for (uint x=0;x<tiles.x;++x)
     for (uint y=0;y<tiles.y;++y) {
@@ -745,8 +745,8 @@ void ReSTIRPLTPT::setScene(RenderContext* pRenderContext, const Scene::SharedPtr
     mpBounceBuffer = nullptr;
     mpRetracedBounceBuffer = nullptr;
 
-    // mSampleTracer = { nullptr, nullptr, nullptr };
-    // mSolveTracer = { nullptr, nullptr, nullptr };
+    mSampleTracer = { nullptr, nullptr, nullptr };
+    mSolveTracer = { nullptr, nullptr, nullptr };
 
     mpTemporalRetracePass = nullptr;
     mpTemporalReusePass = nullptr;

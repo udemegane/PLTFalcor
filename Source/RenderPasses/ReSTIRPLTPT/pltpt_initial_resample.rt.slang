@@ -30,7 +30,9 @@
 #include "pltpt.slangh"
 #include "LightSampling.slangh"
 
-
+// Inputs
+Texture2D<PackedHitInfo> gVBuffer;
+Texture2D<float4> gViewW; // Optional
 
 // // Outputs
 RWTexture2D<float4> gOutputColor;
