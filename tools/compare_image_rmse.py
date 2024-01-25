@@ -14,10 +14,10 @@ def colored_string_blue(str):
 def colored_string_gray(str):
     return f"\033[1;37;40m{str}\033[0m"
 
-path_root = 'E:\\data\\RIS__fix\\DI'
-gt_path = f"{path_root}\\Naive_randwl_8192spp.ToneMapper.dst..png"
-img1_path = f"{path_root}\\Naive_randwl.ToneMapper.dst..png"
-img2_path = f"{path_root}\\RIS_8_constwl_2.ToneMapper.dst..png"
+path_root = 'E:\\data\\PT\\submit_proto'
+gt_path = f"{path_root}\\bike_pt_34000_hwss1.34.1ms.ToneMapper.dst..png"
+img1_path = f"{path_root}\\bike_pt_1_hwss1.34.1ms.ToneMapper.dst..png"
+img2_path = f"{path_root}\\bike_rs_20_hwss1.43.5ms.ToneMapper.dst..png"
 
 gt_img = cv2.imread(gt_path, cv2.IMREAD_COLOR)/255
 img1 = cv2.imread(img1_path, cv2.IMREAD_COLOR)/255
