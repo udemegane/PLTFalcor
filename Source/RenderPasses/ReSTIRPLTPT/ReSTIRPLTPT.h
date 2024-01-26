@@ -120,6 +120,7 @@ private:
     // Runtime data
     uint                        mFrameCount = 0;                ///< Frame count since scene was loaded.
     bool                        mOptionsChanged = false;
+    bool                        mSceneChanged = false;
 
     // Ray tracing program.
     struct tracer_t {

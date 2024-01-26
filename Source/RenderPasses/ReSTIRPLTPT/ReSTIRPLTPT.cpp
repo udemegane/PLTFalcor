@@ -474,7 +474,28 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
     }
 
-    // // Type Reflection
+    {
+        bool dirty = false;
+        auto sceneUpdates = mpScene->getUpdates();
+        if ((sceneUpdates & ~Scene::UpdateFlags::CameraPropertiesChanged) != Scene::UpdateFlags::None)
+        {
+            dirty = true;
+        }
+        if (is_set(sceneUpdates, Scene::UpdateFlags::CameraPropertiesChanged))
+        {
+            auto excluded = Camera::Changes::Jitter | Camera::Changes::History;
+            auto cameraChanges = mpScene->getCamera()->getChanges();
+            if ((cameraChanges & ~excluded) != Camera::Changes::None) dirty = true;
+        }
+        if (is_set(sceneUpdates, Scene::UpdateFlags::SDFGeometryChanged))
+        {
+            dirty = true;
+        }
+        mSceneChanged = dirty;
+    }
+
+
+    // Type Reflection
     // {
     //     if(mpReflectTypes==nullptr)
     //     {
@@ -580,6 +601,42 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
     const auto tiles = (targetDim + uint2(mTileSize - 1)) / mTileSize;
 
+        // Reservoirs
+    {
+        const uint32_t reservoirElements = targetDim.x * targetDim.y;
+        const uint32_t kReservoirPayloadSizeBytes = [&]()->uint32_t{
+            if(mHWSS==1 || mHWSS==2)
+                return 80u;
+            else if(mHWSS==4 || mHWSS==3)
+                return 96u;
+            return 1u;
+        }();
+
+        assert(kReservoirPayloadSizeBytes % 16 == 0);
+        const bool payloadSizeChanged = mReservoirPayloadSizeBytes != kReservoirPayloadSizeBytes;
+        mReservoirPayloadSizeBytes = payloadSizeChanged ? kReservoirPayloadSizeBytes : mReservoirPayloadSizeBytes;
+
+
+        if(mpIntermediateReservoirs1==nullptr || mpIntermediateReservoirs1->getElementCount()!=reservoirElements || payloadSizeChanged) {
+            mpIntermediateReservoirs1 = Buffer::createStructured(
+                this->mpDevice.get(),
+                mReservoirPayloadSizeBytes,
+                reservoirElements,
+                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
+                Buffer::CpuAccess::None, nullptr, false);
+            mpIntermediateReservoirs1->setName("ReSTIRPLTPT::mpIntermediateReservoirs1");
+        }
+
+        if(mpIntermediateReservoirs2==nullptr || mpIntermediateReservoirs2->getElementCount()!=reservoirElements || payloadSizeChanged){
+            mpIntermediateReservoirs2 = Buffer::createStructured(
+                this->mpDevice.get(),
+                mReservoirPayloadSizeBytes,
+                reservoirElements,
+                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
+                Buffer::CpuAccess::None, nullptr, false);
+            mpIntermediateReservoirs2->setName("ReSTIRPLTPT::mpIntermediateReservoirs2");
+        }
+    }
 
     // Set constants.
     auto varSetter = [&](auto& var) {
@@ -614,8 +671,8 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
     for (const auto& channel : kSampleOutputChannels)   bind(channel, true, false);
     for (const auto& channel : kSolveOutputChannels)    bind(channel, false, true);
 
-    auto tableCache = mSolveTracer.pVars->getShaderTable();
     temporalResampling(pRenderContext, renderData);
+
     // Render
     for (uint x=0;x<tiles.x;++x)
     for (uint y=0;y<tiles.y;++y) {
@@ -687,6 +744,7 @@ void ReSTIRPLTPT::temporalResampling(RenderContext* pRenderContext, const Render
     reuseVar["gIndirectIllumination"]=mpIndirectIlluminateTexture;
     auto varSetter = [&](auto& var) {
         var["CB"]["gFrameCount"] = mFrameCount;
+        var["CB"]["sceneChanged"] = mSceneChanged;
         var["CB"]["kOutputSize"] = renderData.getDefaultTextureDims();
         var["CB"]["kSourcingAreaFromEmissiveGeometry"] = mSourcingAreaFromEmissiveGeometry;
         var["CB"]["kSourcingMaxBeamOmega"] = mSourcingMaxBeamOmega;
@@ -847,5 +905,5 @@ void ReSTIRPLTPT::prepareVars() {
 void ReSTIRPLTPT::endFrame()
 {
     mFrameCount++;
-
+    mpIntermediateReservoirs1.swap(mpIntermediateReservoirs2);
 }

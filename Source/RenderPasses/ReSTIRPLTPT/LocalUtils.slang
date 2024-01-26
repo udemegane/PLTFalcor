@@ -31,10 +31,7 @@ void decodeMortonCode(const uint code, out uint2 pixel)
 // typealias reserver_padding = vector<float, pad_size>;
 struct PackedReservoir
 {
-// HWSS_SAMPLES == 1 : 64B
-// HWSS_SAMPLES == 2 : 80B
-// HWSS_SAMPLES == 3 : 80B
-// HWSS_SAMPLES == 4 : 96B
+    // 64,68,72,76B
 #if HWSS_SAMPLES == 1
     // 4B
     float L;
@@ -101,6 +98,7 @@ struct PackedReservoir
     {
         Reservoir r;
         r.w_sum = w_sum;
+        r.W = W; // TODO:
         r.p_hat = hwss_t(0.0f);
 #if HWSS_SAMPLES == 1
         r.p_hat[0] = L;

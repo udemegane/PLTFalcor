@@ -143,8 +143,9 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
     }
     else
         hwss_mod *= 1.f / float(beam.hwss_comps);
+
     // TODO:
-    beam.scale(isRetracing ? (solveData.initialReservoir.evalUCW()[0]) : pathContribution * hwss_mod);
+    beam.scale(isRetracing ? (solveData.initialReservoir.W) : pathContribution * hwss_mod);
 
     // 間違いなく色の何かがおかしい
     // リサンプリング計算の単位?は合っている気がする
@@ -348,7 +349,15 @@ void Retrace(
 float3 PathReuse(const uint2 pixel)
 {
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
-    const Reservoir r = readReservoir(pixel);
+    const Reservoir curr = readReservoir(pixel);
+    const Reservoir prev = readReservoir(pixel, true);
+    Reservoir r = Reservoir();
+    if (sceneChanged || gFrameCount == 0)
+        r = curr;
+    else
+    {
+        r = Reservoir::MergeReservoirsForTemporal(prev, curr, sampleNext1D(sg), sampleNext1D(sg));
+    }
     const int p = r.s.lastBounceIdx;
     const BounceData bounce = readBounce(p, pixel);
 
@@ -379,7 +388,7 @@ float3 PathReuse(const uint2 pixel)
     const BSDFProperties bsdfProp = bsdf.getProperties(sd);
     solveData.initialReservoir = r;
     Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
-    // return r.s.posW;
+    gCurrReservoirs[encodeMortonCode(pixel)] = PackedReservoir(solveData.initialReservoir);
     return solveData.Lrgb;
 }
 
