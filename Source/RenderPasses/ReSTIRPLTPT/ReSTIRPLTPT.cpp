@@ -594,50 +594,21 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
                 Buffer::CpuAccess::None, nullptr, false);
             mpIntermediateReservoirs2->setName("ReSTIRPLTPT::mpIntermediateReservoirs2");
         }
+        if(mpIntermediateReservoirs3==nullptr || mpIntermediateReservoirs3->getElementCount()!=reservoirElements || payloadSizeChanged){
+            mpIntermediateReservoirs3 = Buffer::createStructured(
+                this->mpDevice.get(),
+                mSolveTracer.pVars->getRootVar()["gCurrReservoirs"],
+                reservoirElements,
+                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
+                Buffer::CpuAccess::None, nullptr, false);
+            mpIntermediateReservoirs3->setName("ReSTIRPLTPT::mpIntermediateReservoirs3");
+        }
     }
 
 
     // Get dimensions of ray dispatch.
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
     const auto tiles = (targetDim + uint2(mTileSize - 1)) / mTileSize;
-
-        // Reservoirs
-    {
-        const uint32_t reservoirElements = targetDim.x * targetDim.y;
-        const uint32_t kReservoirPayloadSizeBytes = [&]()->uint32_t{
-            if(mHWSS==1 || mHWSS==2)
-                return 80u;
-            else if(mHWSS==4 || mHWSS==3)
-                return 96u;
-            return 1u;
-        }();
-
-        assert(kReservoirPayloadSizeBytes % 16 == 0);
-        const bool payloadSizeChanged = mReservoirPayloadSizeBytes != kReservoirPayloadSizeBytes;
-        mReservoirPayloadSizeBytes = payloadSizeChanged ? kReservoirPayloadSizeBytes : mReservoirPayloadSizeBytes;
-
-
-        if(mpIntermediateReservoirs1==nullptr || mpIntermediateReservoirs1->getElementCount()!=reservoirElements || payloadSizeChanged) {
-            mpIntermediateReservoirs1 = Buffer::createStructured(
-                this->mpDevice.get(),
-                mReservoirPayloadSizeBytes,
-                reservoirElements,
-                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
-                Buffer::CpuAccess::None, nullptr, false);
-            mpIntermediateReservoirs1->setName("ReSTIRPLTPT::mpIntermediateReservoirs1");
-        }
-
-        if(mpIntermediateReservoirs2==nullptr || mpIntermediateReservoirs2->getElementCount()!=reservoirElements || payloadSizeChanged){
-            mpIntermediateReservoirs2 = Buffer::createStructured(
-                this->mpDevice.get(),
-                mReservoirPayloadSizeBytes,
-                reservoirElements,
-                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
-                Buffer::CpuAccess::None, nullptr, false);
-            mpIntermediateReservoirs2->setName("ReSTIRPLTPT::mpIntermediateReservoirs2");
-        }
-    }
-
     // Set constants.
     auto varSetter = [&](auto& var) {
         var["CB"]["gFrameCount"] = mFrameCount;
@@ -753,8 +724,9 @@ void ReSTIRPLTPT::temporalResampling(RenderContext* pRenderContext, const Render
         if (mpEmissiveSampler)  mpEmissiveSampler->setShaderData(var["CB"]["emissiveSampler"]);
         if (mDebugView != 0)
             var["CB"]["kDebugViewIntensity"] = mDebugViewIntensity;
-        var["gPrevReservoirs"] = mpIntermediateReservoirs2;
         var["gCurrReservoirs"] = mpIntermediateReservoirs1;
+        var["gPrevReservoirs"] = mpIntermediateReservoirs2;
+        var["gNextReservoirs"] = mpIntermediateReservoirs3;
         var["bounceBuffer"] = mpBounceBuffer;
         var["retracedBounceBuffer"] = mpRetracedBounceBuffer;
         var["gScene"] = mpScene->getParameterBlock();
@@ -905,5 +877,5 @@ void ReSTIRPLTPT::prepareVars() {
 void ReSTIRPLTPT::endFrame()
 {
     mFrameCount++;
-    mpIntermediateReservoirs1.swap(mpIntermediateReservoirs2);
+    mpIntermediateReservoirs3.swap(mpIntermediateReservoirs2);
 }

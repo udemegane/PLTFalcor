@@ -5,8 +5,9 @@ import LocalUtils;
 import Utils.Debug.PixelDebug;
 // import Utils.Debug.
 
-RWStructuredBuffer<PackedReservoir> gPrevReservoirs;
-RWStructuredBuffer<PackedReservoir> gCurrReservoirs;
+StructuredBuffer<PackedReservoir> gPrevReservoirs;
+StructuredBuffer<PackedReservoir> gCurrReservoirs;
+RWStructuredBuffer<PackedReservoir> gNextReservoirs;
 
 StructuredBuffer<BounceData> bounceBuffer;
 StructuredBuffer<BounceData> retracedBounceBuffer;
@@ -388,7 +389,8 @@ float3 PathReuse(const uint2 pixel)
     const BSDFProperties bsdfProp = bsdf.getProperties(sd);
     solveData.initialReservoir = r;
     Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
-    gCurrReservoirs[encodeMortonCode(pixel)] = PackedReservoir(solveData.initialReservoir);
+    gNextReservoirs[encodeMortonCode(pixel)] = PackedReservoir(r);
+    // float3 color = SpectrumUtils.spectrumToRgb(r.p_hat[0] * r.W, r.s.wavelength, 1);
     return solveData.Lrgb;
 }
 

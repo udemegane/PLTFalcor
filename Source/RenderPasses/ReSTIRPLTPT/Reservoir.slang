@@ -2,7 +2,7 @@
 
 import PathHelper;
 import Utils.HWSS;
-// import StaticVars;
+import StaticVars;
 
 struct Reservoir
 {
@@ -31,7 +31,7 @@ struct Reservoir
             W = w_sum / p_hat;
             return true;
         }
-        M = max(M, 30);
+        M = max(M, kReSTIRPTReservoirSize);
         return false;
     }
 
@@ -44,8 +44,16 @@ struct Reservoir
         const float misCurr = weightedCurrL / (weightedPrevL + weightedCurrL);
         const float w_prev = misPrev * prev.p_hat[0] * prev.W[0];
         const float w_curr = misCurr * curr.p_hat[0] * curr.W[0];
-        newRes.update(w_curr, curr.s, curr.p_hat, rng1);
-        newRes.update(w_prev, prev.s, prev.p_hat, rng2);
+        const bool usePrev = rng1 < w_prev / (w_prev + w_curr);
+        const float w_sum = w_prev + w_curr;
+        newRes.w_sum = w_sum;
+        newRes.M = prev.M + curr.M;
+        newRes.p_hat = usePrev ? prev.p_hat : curr.p_hat;
+        newRes.W = w_sum / newRes.p_hat;
+        if(usePrev)
+            newRes.s = prev.s;
+        else
+            newRes.s = curr.s;
         return newRes;
     }
 };

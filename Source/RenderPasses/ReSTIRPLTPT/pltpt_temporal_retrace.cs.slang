@@ -6,6 +6,7 @@ import LocalUtils;
 
 RWStructuredBuffer<PackedReservoir> gPrevReservoirs;
 RWStructuredBuffer<PackedReservoir> gCurrReservoirs;
+RWStructuredBuffer<PackedReservoir> gNextReservoirs;
 
 StructuredBuffer<BounceData> bounceBuffer;
 StructuredBuffer<BounceData> retracedBounceBuffer;

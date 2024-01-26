@@ -141,5 +141,6 @@ private:
     Buffer::SharedPtr mpRetracedBounceBuffer;
     Buffer::SharedPtr mpIntermediateReservoirs1;
     Buffer::SharedPtr mpIntermediateReservoirs2;
+    Buffer::SharedPtr mpIntermediateReservoirs3;
 };
 
