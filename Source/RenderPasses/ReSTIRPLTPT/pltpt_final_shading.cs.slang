@@ -42,6 +42,6 @@ void main(
     if (any(pixel >= kOutputSize.xy))
         return;
     // SampleGenerator sg = SampleGenerator(pixel, gFrameCount * gFrameCount);
-    gOutputColor[pixel] += gIndirectIllumination[pixel];
+    gOutputColor[pixel] = gIndirectIllumination[pixel];
 
 }

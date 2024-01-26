@@ -516,43 +516,6 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
         }
     }
 
-    // Reservoirs
-    {
-        const uint32_t reservoirElements = targetDim.x * targetDim.y;
-        const uint32_t kReservoirPayloadSizeBytes = [&]()->uint32_t{
-            if(mHWSS==1)
-                return 64u;
-            else if(mHWSS==2 || mHWSS==3)
-                return 80u;
-            else if(mHWSS==4)
-                return 96u;
-            return 0u;
-        }();
-
-        assert(kReservoirPayloadSizeBytes % 16 == 0);
-        const bool payloadSizeChanged = mReservoirPayloadSizeBytes != kReservoirPayloadSizeBytes;
-        mReservoirPayloadSizeBytes = payloadSizeChanged ? kReservoirPayloadSizeBytes : mReservoirPayloadSizeBytes;
-
-        if(mpIntermediateReservoirs1==nullptr || mpIntermediateReservoirs1->getElementCount()!=reservoirElements || payloadSizeChanged) {
-            mpIntermediateReservoirs1 = Buffer::createStructured(
-                this->mpDevice.get(),
-                mReservoirPayloadSizeBytes,
-                reservoirElements,
-                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
-                Buffer::CpuAccess::None, nullptr, false);
-            mpIntermediateReservoirs1->setName("ReSTIRPLTPT::mpIntermediateReservoirs1");
-        }
-
-        if(mpIntermediateReservoirs2==nullptr || mpIntermediateReservoirs2->getElementCount()!=reservoirElements || payloadSizeChanged){
-            mpIntermediateReservoirs2 = Buffer::createStructured(
-                this->mpDevice.get(),
-                mReservoirPayloadSizeBytes,
-                reservoirElements,
-                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
-                Buffer::CpuAccess::None, nullptr, false);
-            mpIntermediateReservoirs2->setName("ReSTIRPLTPT::mpIntermediateReservoirs2");
-        }
-    }
 
 
     auto defines = getDefines();
@@ -573,6 +536,45 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
     // The program should have all necessary defines set at this point.
     if (!mSampleTracer.pVars || !mSolveTracer.pVars) prepareVars();
     FALCOR_ASSERT(mSampleTracer.pVars && mSolveTracer.pVars);
+
+        // Reservoirs
+    {
+        const uint32_t reservoirElements = targetDim.x * targetDim.y;
+        const uint32_t kReservoirPayloadSizeBytes = [&]()->uint32_t{
+            if(mHWSS==1)
+                return 64u;
+            else if(mHWSS==2 || mHWSS==3)
+                return 80u;
+            else if(mHWSS==4)
+                return 96u;
+            return 0u;
+        }();
+
+        assert(kReservoirPayloadSizeBytes % 16 == 0);
+        const bool payloadSizeChanged = mReservoirPayloadSizeBytes != kReservoirPayloadSizeBytes;
+        mReservoirPayloadSizeBytes = payloadSizeChanged ? kReservoirPayloadSizeBytes : mReservoirPayloadSizeBytes;
+
+        if(mpIntermediateReservoirs1==nullptr || mpIntermediateReservoirs1->getElementCount()!=reservoirElements || payloadSizeChanged) {
+            mpIntermediateReservoirs1 = Buffer::createStructured(
+                this->mpDevice.get(),
+                mSolveTracer.pVars->getRootVar()["gCurrReservoirs"],
+                reservoirElements,
+                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
+                Buffer::CpuAccess::None, nullptr, false);
+            mpIntermediateReservoirs1->setName("ReSTIRPLTPT::mpIntermediateReservoirs1");
+        }
+
+        if(mpIntermediateReservoirs2==nullptr || mpIntermediateReservoirs2->getElementCount()!=reservoirElements || payloadSizeChanged){
+            mpIntermediateReservoirs2 = Buffer::createStructured(
+                this->mpDevice.get(),
+                mSolveTracer.pVars->getRootVar()["gCurrReservoirs"],
+                reservoirElements,
+                Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
+                Buffer::CpuAccess::None, nullptr, false);
+            mpIntermediateReservoirs2->setName("ReSTIRPLTPT::mpIntermediateReservoirs2");
+        }
+    }
+
 
     // Get dimensions of ray dispatch.
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
@@ -613,17 +615,22 @@ void ReSTIRPLTPT::execute(RenderContext* pRenderContext, const RenderData& rende
     for (const auto& channel : kSolveOutputChannels)    bind(channel, false, true);
 
     auto tableCache = mSolveTracer.pVars->getShaderTable();
+    temporalResampling(pRenderContext, renderData);
     // Render
     for (uint x=0;x<tiles.x;++x)
     for (uint y=0;y<tiles.y;++y) {
         mSampleTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
         mSolveTracer.pVars->getRootVar()["CB"]["kTile"] = uint2(x,y);
+        mpTemporalRetracePass->getVars()->getRootVar()["CB"]["kTile"] = uint2(x,y);
+        mpTemporalReusePass->getVars()->getRootVar()["CB"]["kTile"] = uint2(x,y);
 
         mpScene->raytrace(pRenderContext, mSampleTracer.pProgram.get(), mSampleTracer.pVars, { mTileSize, mTileSize, 1 });
         mpScene->raytrace(pRenderContext, mSolveTracer.pProgram.get(),  mSolveTracer.pVars,  { mTileSize, mTileSize, 1 });
+        mpTemporalRetracePass->execute(pRenderContext, { mTileSize, mTileSize, 1 });
+        mpTemporalReusePass->execute(pRenderContext, { mTileSize, mTileSize, 1 });
+        // temporalResampling(pRenderContext, renderData);
     }
 
-    temporalResampling(pRenderContext, renderData);
 
     finalShading(pRenderContext, renderData);
 
@@ -699,8 +706,8 @@ void ReSTIRPLTPT::temporalResampling(RenderContext* pRenderContext, const Render
 
     mpScene->setRaytracingShaderData(pRenderContext, reuseVar);
     mpScene->setRaytracingShaderData(pRenderContext, retraceVar);
-    mpTemporalRetracePass->execute(pRenderContext, uint3(mpIndirectIlluminateTexture->getWidth(), mpIndirectIlluminateTexture->getHeight(), 1));
-    mpTemporalReusePass->execute(pRenderContext, uint3(mpIndirectIlluminateTexture->getWidth(), mpIndirectIlluminateTexture->getHeight(), 1));
+    // mpTemporalRetracePass->execute(pRenderContext, uint3(mpIndirectIlluminateTexture->getWidth(), mpIndirectIlluminateTexture->getHeight(), 1));
+    // mpTemporalReusePass->execute(pRenderContext, uint3(mpIndirectIlluminateTexture->getWidth(), mpIndirectIlluminateTexture->getHeight(), 1));
     // FALCOR_ASSERT(mpIntermediateReservoirs1);
     // FALCOR_ASSERT(mpIntermediateReservoirs2);
 }

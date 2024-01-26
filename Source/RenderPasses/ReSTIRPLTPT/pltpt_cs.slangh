@@ -289,7 +289,6 @@ bool regenerateSample(const PathReconstructionData seed, out LightSample ls)
         return false;
     if (!kUseAnalyticLights && seed.LightType == (uint)SampledLightType::Analytic)
         return false;
-
     ls.pdf = seed.pdf;
     ls.origin = seed.origin;
     ls.distance = seed.distance;

@@ -30,7 +30,7 @@ void main(
     uint3 groupIndex: SV_GroupIndex
 )
 {
-    uint2 pixel = dispatchThreadId.xy;
+    uint2 pixel = dispatchThreadId.xy + kTile * mTileSize;
     if (any(pixel >= kOutputSize.xy))
         return;
     float a;

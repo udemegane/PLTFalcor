@@ -2,6 +2,8 @@
 
 #include "pltpt_cs.slangh"
 import LocalUtils;
+import Utils.Debug.PixelDebug;
+// import Utils.Debug.
 
 RWStructuredBuffer<PackedReservoir> gPrevReservoirs;
 RWStructuredBuffer<PackedReservoir> gCurrReservoirs;
@@ -230,9 +232,11 @@ void Retrace(
     // Sample a light.
     LightSample ls;
     const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
-    const bool valid = regenerateSample(solveData.initialReservoir.s, ls);
+    const bool valid = regenerateSample(solveData.initialReservoir.s, ls); //壊れている
     if (!valid || !any(ls.beam.L > .0f))
+    {
         return;
+    }
 
     // Update HWSS component count of sourced beam
     if (!mHWSSDoMIS && bounce.flags.dispersiveDeltaSegment)
@@ -348,6 +352,8 @@ float3 PathReuse(const uint2 pixel)
     const int p = r.s.lastBounceIdx;
     const BounceData bounce = readBounce(p, pixel);
 
+    // return float3(bounce.lastNonDeltaPdf);
+
     PLTSolve solveData = PLTSolve(sg, sg, r.s.wavelength);
     {
         const BounceData prevBounce = readBounce(p - 1, pixel);
@@ -371,6 +377,7 @@ float3 PathReuse(const uint2 pixel)
     const ShadingData sd = gScene.materials.prepareShadingData(v, materialID, bounce.wi, lod);
     let bsdf = gScene.materials.getMaterialInstance(sd, lod);
     const BSDFProperties bsdfProp = bsdf.getProperties(sd);
+    solveData.initialReservoir = r;
     Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
     // return r.s.posW;
     return solveData.Lrgb;
@@ -384,7 +391,7 @@ void main(
     uint3 groupIndex: SV_GroupIndex
 )
 {
-    uint2 pixel = dispatchThreadId.xy;
+    uint2 pixel = dispatchThreadId.xy + kTile * mTileSize;
     if (any(pixel >= kOutputSize.xy))
         return;
 
