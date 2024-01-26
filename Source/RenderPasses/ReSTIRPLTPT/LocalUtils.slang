@@ -37,86 +37,101 @@ struct PackedReservoir
 // HWSS_SAMPLES == 4 : 96B
 #if HWSS_SAMPLES == 1
     // 4B
-    float L1;
+    float L;
+    float W;
 #endif
 #if HWSS_SAMPLES == 2
-    // 16B
-    float L1;
-    float L2;
-    uint2 _padding;
+    float2 L;
+    float2 W;
+    // TODO: padding
 #endif
 #if HWSS_SAMPLES == 3
-    // 12B
-    float L1;
-    float L2;
-    float L3;
+    float3 L;
+    float3 W;
+    uint _padding;
 #endif
 #if HWSS_SAMPLES == 4
-    // 24B
-    float L1;
-    float L2;
-    float L3;
-    float L4;
+    float4 L;
+    float4 W;
     uint2 _padding;
 #endif
-    // Size: 64B ~ 96B
-    // hwss_t p_hat; // 4B ~ 16B
-
-    float M;                        // 4B
+    // 60 ~ 72B
+    // float M;                        // 4B
     float w_sum;                    // 4B
-    PackedPathReconstructionData s; // 52~64B
+    PackedPathReconstructionData s; // 52,56,60,64B
 
     __init(Reservoir r)
     {
-        M = r.M;
         w_sum = r.w_sum;
+        float2 a;
 
 #if HWSS_SAMPLES == 1
-        L1 = r.p_hat[0];
+        L = r.p_hat[0];
+        W = r.W[0];
 #endif
 #if HWSS_SAMPLES == 2
-        L1 = r.p_hat[0];
-        L2 = r.p_hat[1];
+        L[0] = r.p_hat[0];
+        L[1] = r.p_hat[1];
+        W[0] = r.W[0];
+        W[1] = r.W[1];
 #endif
 #if HWSS_SAMPLES == 3
-        L1 = r.p_hat[0];
-        L2 = r.p_hat[1];
-        L3 = r.p_hat[2];
+        L[0] = r.p_hat[0];
+        L[1] = r.p_hat[1];
+        L[2] = r.p_hat[2];
+        W[0] = r.W[0];
+        W[1] = r.W[1];
+        W[2] = r.W[2];
 #endif
 #if HWSS_SAMPLES == 4
-        L1 = r.p_hat[0];
-        L2 = r.p_hat[1];
-        L3 = r.p_hat[2];
-        L4 = r.p_hat[3];
+        L[0] = r.p_hat[0];
+        L[1] = r.p_hat[1];
+        L[2] = r.p_hat[2];
+        L[3] = r.p_hat[3];
+        W[0] = r.W[0];
+        W[1] = r.W[1];
+        W[2] = r.W[2];
+        W[3] = r.W[3];
 #endif
         s = PackedPathReconstructionData(r.s);
+        s.packedComponents.y |= (r.M << 24) & (uint)PackedComponentsMask::M;
         // rmisWeight = r.s.RMISWeight;
     }
     Reservoir unpack()
     {
         Reservoir r;
-        r.M = M;
         r.w_sum = w_sum;
         r.p_hat = hwss_t(0.0f);
 #if HWSS_SAMPLES == 1
-        r.p_hat[0] = L1;
+        r.p_hat[0] = L;
+        r.W[0] = W;
 #endif
 #if HWSS_SAMPLES == 2
-        r.p_hat[0] = L1;
-        r.p_hat[1] = L2;
+        r.p_hat[0] = L[0];
+        r.p_hat[1] = L[1];
+        r.W[0] = W[0];
+        r.W[1] = W[1];
 #endif
 #if HWSS_SAMPLES == 3
-        r.p_hat[0] = L1;
-        r.p_hat[1] = L2;
-        r.p_hat[2] = L3;
+        r.p_hat[0] = L[0];
+        r.p_hat[1] = L[1];
+        r.p_hat[2] = L[2];
+        r.W[0] = W[0];
+        r.W[1] = W[1];
+        r.W[2] = W[2];
 #endif
 #if HWSS_SAMPLES == 4
-        r.p_hat[0] = L1;
-        r.p_hat[1] = L2;
-        r.p_hat[2] = L3;
-        r.p_hat[3] = L4;
+        r.p_hat[0] = L[0];
+        r.p_hat[1] = L[1];
+        r.p_hat[2] = L[2];
+        r.p_hat[3] = L[3];
+        r.W[0] = W[0];
+        r.W[1] = W[1];
+        r.W[2] = W[2];
+        r.W[3] = W[3];
 #endif
         r.s = s.unpack();
+        r.M = (s.packedComponents.y & (uint)PackedComponentsMask::M) >> 24;
         r.s.RMISWeight = 1.0f; // Currently, only NEE resampling is supported, so RMISWeight is always 1.0f
         return r;
     }
