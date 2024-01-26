@@ -31,46 +31,44 @@ void decodeMortonCode(const uint code, out uint2 pixel)
 // typealias reserver_padding = vector<float, pad_size>;
 struct PackedReservoir
 {
-// HWSS_SAMPLES == 1 : 64B
-// HWSS_SAMPLES == 2 : 80B
-// HWSS_SAMPLES == 3 : 80B
-// HWSS_SAMPLES == 4 : 96B
+    // 64,68,72,76B
+    float M;                        // 4B
+    float w_sum;                    // 4B
+    float W;                        // 4B
+    PackedPathReconstructionData s; // 52,56,60,64B
+
 #if HWSS_SAMPLES == 1
-    // 4B
+    // 80B
     float L1;
+    uint3 _padding;
 #endif
 #if HWSS_SAMPLES == 2
-    // 16B
+    // 80B
     float L1;
     float L2;
-    uint2 _padding;
+    uint _padding;
 #endif
 #if HWSS_SAMPLES == 3
-    // 12B
+    // 96B
     float L1;
     float L2;
     float L3;
+    uint3 _padding;
 #endif
 #if HWSS_SAMPLES == 4
-    // 24B
+    // 96B
     float L1;
     float L2;
     float L3;
     float L4;
-    uint2 _padding;
+    uint _padding;
 #endif
-    // Size: 64B ~ 96B
-    // hwss_t p_hat; // 4B ~ 16B
-
-    float M;                        // 4B
-    float w_sum;                    // 4B
-    PackedPathReconstructionData s; // 52~64B
 
     __init(Reservoir r)
     {
         M = r.M;
         w_sum = r.w_sum;
-
+        W = r.W;
 #if HWSS_SAMPLES == 1
         L1 = r.p_hat[0];
 #endif
@@ -97,6 +95,7 @@ struct PackedReservoir
         Reservoir r;
         r.M = M;
         r.w_sum = w_sum;
+        r.W = W; // TODO:
         r.p_hat = hwss_t(0.0f);
 #if HWSS_SAMPLES == 1
         r.p_hat[0] = L1;

@@ -162,7 +162,7 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
     else
         hwss_mod *= 1.f / float(beam.hwss_comps);
         // TODO:
-    beam.scale(isRetracing ? (solveData.initialReservoir.evalUCW()[0]) : pathContribution * hwss_mod);
+    beam.scale(isRetracing ? (solveData.initialReservoir.W) : pathContribution * hwss_mod);
 
     // 間違いなく色の何かがおかしい
     // リサンプリング計算の単位?は合っている気がする
