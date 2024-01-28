@@ -38,8 +38,8 @@ struct Reservoir
     // hwss_t evalUCW() { return w_sum / p_hat; }
     static Reservoir MergeReservoirsForTemporal(const Reservoir prev, const Reservoir curr, float rng1, float rng2) {
         Reservoir newRes = Reservoir();
-        const float weightedPrevL = prev.M * prev.p_hat[0];
-        const float weightedCurrL = curr.M * curr.p_hat[0];
+        const float weightedPrevL =  prev.p_hat[0];
+        const float weightedCurrL =  curr.p_hat[0];
         const float misPrev = weightedPrevL / (weightedPrevL + weightedCurrL);
         const float misCurr = weightedCurrL / (weightedPrevL + weightedCurrL);
         const float w_prev = misPrev * prev.p_hat[0] * prev.W[0];
@@ -47,7 +47,7 @@ struct Reservoir
         const bool usePrev = rng1 < w_prev / (w_prev + w_curr);
         const float w_sum = w_prev + w_curr;
         newRes.w_sum = w_sum;
-        newRes.M = prev.M + curr.M;
+        newRes.M = max(usePrev?prev.M+1:curr.M+1 ,128);
         newRes.p_hat = usePrev ? prev.p_hat : curr.p_hat;
         newRes.W = w_sum / newRes.p_hat;
         if(usePrev)
@@ -57,5 +57,3 @@ struct Reservoir
         return newRes;
     }
 };
-
-

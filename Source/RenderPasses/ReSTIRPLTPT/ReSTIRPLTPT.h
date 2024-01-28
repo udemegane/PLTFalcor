@@ -116,6 +116,8 @@ private:
     bool                        mUseReSTIRPT = true;
     bool                        mReSTIRPTUseMIS = false;
     uint                        mReSTIRPTReservoirSize = 32;
+    bool                        mReSTIRPTUseTemporalResampling = true;
+    bool                        mReSTIRPTUseSpatialResampling = false;
 
     // Runtime data
     uint                        mFrameCount = 0;                ///< Frame count since scene was loaded.

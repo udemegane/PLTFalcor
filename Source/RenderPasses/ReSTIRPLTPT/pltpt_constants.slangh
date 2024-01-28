@@ -82,3 +82,10 @@
 #define RESTIR_PT_RESERVOIR_SIZE 1
 #endif
 
+#ifndef USE_RESTIR_PT_TEMPORAL
+#define USE_RESTIR_PT_TEMPORAL false
+#endif
+
+#ifndef USE_RESTIR_PT_SPATIAL
+#define USE_RESTIR_PT_SPATIAL false
+#endif

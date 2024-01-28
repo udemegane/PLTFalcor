@@ -1087,7 +1087,7 @@ void main() {
         uint encodedPixel = encodeMortonCode(pixel);
         // uint simplePixel = pixel.x + pixel.y * kOutputSize.x;
         gCurrReservoirs[encodedPixel] = PackedReservoir(solveData.initialReservoir);
-        if (false)
+        if (!kUseReSTIRPTTemporal && !kUseReSTIRPTSpatial)
         {
             const int p = solveData.initialReservoir.s.lastBounceIdx;
             const BounceData bounce = readBounce(p, pixel);
@@ -1105,12 +1105,12 @@ void main() {
             solveData.pathOrigin = selectedPathOrigin;
 
             Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
-            tmp = solveData.Lrgb - di;
-            solveData.initialReservoir.s.posW = tmp;
+            // tmp = solveData.Lrgb - di;
+            // solveData.initialReservoir.s.posW = tmp;
         }
     }
 
-    gOutputColor[pixel] = float4(di, 1.f);
+    gOutputColor[pixel] = float4(solveData.Lrgb, 1.f);
 
 
 #if DO_DEBUG_VIEW==1

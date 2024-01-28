@@ -283,6 +283,8 @@ Program::DefineList ReSTIRPLTPT::getDefines() const {
     defines.add("USE_RESTIR_PT", mUseReSTIRPT ? "true" : "false");
     defines.add("USE_RESTIR_PT_MIS", mReSTIRPTUseMIS ? "true" : "false");
     defines.add("RESTIR_PT_RESERVOIR_SIZE", std::to_string(mReSTIRPTReservoirSize));
+    defines.add("USE_RESTIR_PT_TEMPORAL", mReSTIRPTUseTemporalResampling? "true" : "false");
+    defines.add("USE_RESTIR_PT_SPATIAL", mReSTIRPTUseSpatialResampling? "true" : "false");
 
     // Use compression for PackedHitInfo
     // defines.add("HIT_INFO_USE_COMPRESSION", "1");
@@ -386,6 +388,10 @@ void ReSTIRPLTPT::renderUI(Gui::Widgets& widget) {
             dirty |= widget.checkbox("MIS", mReSTIRPTUseMIS);
             widget.tooltip("Use MIS for ReSTIR PT.", true);
             dirty |= widget.slider("Reservoir size", mReSTIRPTReservoirSize, 1u, 32u);
+            dirty |= widget.checkbox("Temporal resampling", mReSTIRPTUseTemporalResampling);
+            widget.tooltip("Use temporal resampling for ReSTIR PT.", true);
+            dirty |= widget.checkbox("Spatial resampling", mReSTIRPTUseSpatialResampling);
+            widget.tooltip("Use spatial resampling for ReSTIR PT.", false);
         }
     }
 

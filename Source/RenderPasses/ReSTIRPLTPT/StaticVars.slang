@@ -32,3 +32,5 @@ static const uint kReSTIRDIReservoirSize = RESTIR_DI_RESERVOIR_SIZE;
 static const bool kUseReSTIRPT = USE_RESTIR_PT;
 static const bool kUseReSTIRPTMIS = USE_RESTIR_PT_MIS;
 static const uint kReSTIRPTReservoirSize = RESTIR_PT_RESERVOIR_SIZE;
+static const bool kUseReSTIRPTTemporal = USE_RESTIR_PT_TEMPORAL;
+static const bool kUseReSTIRPTSpatial = USE_RESTIR_PT_SPATIAL;

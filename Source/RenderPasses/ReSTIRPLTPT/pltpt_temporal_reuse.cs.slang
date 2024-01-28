@@ -353,7 +353,7 @@ float3 PathReuse(const uint2 pixel)
     const Reservoir curr = readReservoir(pixel);
     const Reservoir prev = readReservoir(pixel, true);
     Reservoir r = Reservoir();
-    if (sceneChanged || gFrameCount == 0)
+    if (sceneChanged || gFrameCount == 0 || !kUseReSTIRPTTemporal)
         r = curr;
     else
     {

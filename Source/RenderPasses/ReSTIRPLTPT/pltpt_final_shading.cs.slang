@@ -10,7 +10,7 @@ import Scene.RaytracingInline;
 import Utils.Sampling.SampleGenerator;
 
 import LocalUtils;
-
+import StaticVars;
 
 // Inputs
 RWTexture2D<float4> gIndirectIllumination;
@@ -42,6 +42,6 @@ void main(
     if (any(pixel >= kOutputSize.xy))
         return;
     // SampleGenerator sg = SampleGenerator(pixel, gFrameCount * gFrameCount);
-    gOutputColor[pixel] = gIndirectIllumination[pixel];
-
+    if(kUseReSTIRPT)
+        gOutputColor[pixel] += gIndirectIllumination[pixel];
 }
