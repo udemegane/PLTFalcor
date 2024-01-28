@@ -5,6 +5,38 @@ import Utils.HWSS;
 import Utils.Color.SpectrumUtils;
 import StaticVars;
 import Utils.Color.ColorHelpers;
+import Rendering.Utils.LightsSamplingUtils;
+
+struct DIReservoir
+{
+    uint M = 0u;
+    float w_sum = 0.0f;
+    float p_hat = 0.0f;
+    LightSample ls;
+    __init()
+    {
+        M = 0u;
+        w_sum = 0.0f;
+        p_hat = 0.0f;
+        ls = {};
+    }
+
+    [mutating]
+    bool update(const float wi, LightSample si, const float p_hat_i, const float rnd)
+    {
+        w_sum += wi;
+        M++;
+        if (rnd < wi / w_sum)
+        {
+            p_hat = max(0.0f, p_hat_i);
+            ls = si;
+            // W = w_sum / p_hat;
+            return true;
+        }
+        return false;
+    }
+    float evalUCW() { return w_sum / (p_hat + FLT_EPSILON); }
+}
 
 struct Reservoir
 {

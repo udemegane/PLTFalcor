@@ -499,9 +499,38 @@ void NEE(inout PLTSolve solveData,
     LightSample ls;
     PathReconstructionData _dummy;
     const bool importanceSampleSpectrum = kImportanceSampleEmissiveSpectra;
-    const bool valid = generateLightSample(sd, sampleReflection, sampleTransmission, solveData.sg, solveData.tilesg, solveData.wavelength, importanceSampleSpectrum, _dummy, ls);
-    if (!valid || !any(ls.beam.L>.0f))
-        return;
+    if (kUseReSTIRDI && bounceIdx == 0 && false)
+    {
+        DIReservoir reservoir = DIReservoir();
+        uint Max = kReSTIRDIInitialSamples;
+        for (int i = 0; i < Max; i++)
+        {
+            LightSample cls = {};
+            const bool valid = generateLightSample(
+                sd, sampleReflection, sampleTransmission, solveData.sg, solveData.tilesg, solveData.wavelength, importanceSampleSpectrum,
+                _dummy, cls
+            );
+            // if (!valid)
+            // {
+            //     continue;
+            // }
+            const float w = valid?(1/Max) * cls.beam.L[0]:0.0f;
+
+            reservoir.update(w, cls, cls.beam.L[0] * cls.pdf, sampleNext1D(solveData.sg));
+        }
+        reservoir.ls.beam.scale(reservoir.evalUCW());
+        ls = reservoir.ls;
+    }
+    else
+    {
+        const bool valid = generateLightSample(
+            sd, sampleReflection, sampleTransmission, solveData.sg, solveData.tilesg, solveData.wavelength, importanceSampleSpectrum,
+            _dummy, ls
+        );
+        if (!valid || !any(ls.beam.L > .0f))
+            return;
+    }
+
 
     // Update HWSS component count of sourced beam
     if (!mHWSSDoMIS && bounce.flags.dispersiveDeltaSegment)

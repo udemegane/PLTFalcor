@@ -9,7 +9,7 @@ static const uint kDebugViewType = DEBUG_VIEW_TYPE;
 
 static const bool kUseDirectLights = USE_DIRECT_LIGHTS;
 static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
-static const bool kUseEnvLight = USE_ENV_LIGHT;
+static const bool kUseEnvLight = false;//USE_ENV_LIGHT;
 static const bool kUseAnalyticLights = USE_ANALYTIC_LIGHTS;
 
 static const bool kAlphaMasking = ALPHA_MASKING;
