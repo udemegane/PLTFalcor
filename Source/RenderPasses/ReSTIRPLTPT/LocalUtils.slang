@@ -60,7 +60,6 @@ struct PackedReservoir
     __init(Reservoir r)
     {
         w_sum = r.w_sum;
-        float2 a;
 
 #if HWSS_SAMPLES == 1
         L = r.p_hat[0];
@@ -91,7 +90,7 @@ struct PackedReservoir
         W[3] = r.W[3];
 #endif
         s = PackedPathReconstructionData(r.s);
-        s.packedComponents.y |= (r.M << 24) & (uint)PackedComponentsMask::M;
+        s.packedComponents.y |= (max(r.M, 0b00000000000000000000000011111111) << 24) & (uint)PackedComponentsMask::M;
         // rmisWeight = r.s.RMISWeight;
     }
     Reservoir unpack()
