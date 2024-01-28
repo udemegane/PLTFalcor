@@ -144,15 +144,14 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
     }
     else
         hwss_mod *= 1.f / float(beam.hwss_comps);
-
     // TODO:
-    beam.scale(isRetracing ? (solveData.initialReservoir.W) : pathContribution * hwss_mod);
+    beam.scale(isRetracing ? solveData.initialReservoir.evalUCW() : pathContribution * hwss_mod);
 
     // 間違いなく色の何かがおかしい
     // リサンプリング計算の単位?は合っている気がする
     const hwss_t Li = beam.L;
-    const float3 Lrgb =
-        max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps) /** * (isRetracing ? 1.0f : 1.0f) **/);
+    const float3 Lrgb = max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps));
+    //* (isRetracing ? solveData.initialReservoir.evalUCW() : pathContribution);
 
     if (all(isfinite(Lrgb)))
         solveData.Lrgb += Lrgb;
@@ -349,22 +348,32 @@ void Retrace(
 
 float3 PathReuse(const uint2 pixel)
 {
-    SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
+    SampleGenerator sg2 = SampleGenerator(pixel, gFrameCount * gFrameCount);
     const Reservoir curr = readReservoir(pixel);
     const Reservoir prev = readReservoir(pixel, true);
     Reservoir r = Reservoir();
-    if (sceneChanged || gFrameCount == 0 || !kUseReSTIRPTTemporal)
+    const bool forceRejectionTemporalReservoir = false;
+    if (sceneChanged || gFrameCount == 0 || !kUseReSTIRPTTemporal || forceRejectionTemporalReservoir)
         r = curr;
     else
     {
-        r = Reservoir::MergeReservoirsForTemporal(prev, curr, sampleNext1D(sg), sampleNext1D(sg));
+        r = Reservoir::MergeReservoirsForTemporal(prev, curr, sampleNext1D(sg2));
+        gNextReservoirs[encodeMortonCode(pixel)] = PackedReservoir(r);
     }
-    const int p = r.s.lastBounceIdx;
-    const BounceData bounce = readBounce(p, pixel);
 
+    // if (true)
+    // {
+    //     const float3 Lrgb =
+    //         max(float3(.0f), SpectrumUtils.spectrumToRgb(prev.p_hat * prev.evalUCW() , prev.s.wavelength, 1));
+    //     return Lrgb;
+    // }
     // return float3(bounce.lastNonDeltaPdf);
 
-    PLTSolve solveData = PLTSolve(sg, sg, r.s.wavelength);
+    SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
+    SampleGenerator tileSg = SampleGenerator(pixel, gFrameCount << 2);
+    const int p = r.s.lastBounceIdx;
+    const BounceData bounce = readBounce(p, pixel);
+    PLTSolve solveData = PLTSolve(sg, tileSg, r.s.wavelength);
     {
         const BounceData prevBounce = readBounce(p - 1, pixel);
         // Process hit data
@@ -389,7 +398,6 @@ float3 PathReuse(const uint2 pixel)
     const BSDFProperties bsdfProp = bsdf.getProperties(sd);
     solveData.initialReservoir = r;
     Retrace(solveData, p, bounce, pixel, triangleHit, sd, v, bsdf, bsdfProp);
-    gNextReservoirs[encodeMortonCode(pixel)] = PackedReservoir(r);
     // float3 color = SpectrumUtils.spectrumToRgb(r.p_hat[0] * r.W, r.s.wavelength, 1);
     return solveData.Lrgb;
 }
@@ -403,7 +411,7 @@ void main(
 )
 {
     uint2 pixel = dispatchThreadId.xy + kTile * mTileSize;
-    if (any(pixel >= kOutputSize.xy))
+    if (any(pixel >= kOutputSize.xy) || !kUseReSTIRPTTemporal)
         return;
 
     gIndirectIllumination[pixel] = float4(PathReuse(pixel), 1.0f);

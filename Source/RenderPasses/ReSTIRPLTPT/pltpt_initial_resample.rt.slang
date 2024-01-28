@@ -162,14 +162,13 @@ void measure(inout PLTSolve solveData, const int bounceIdx, float pathContributi
     else
         hwss_mod *= 1.f / float(beam.hwss_comps);
         // TODO:
-    beam.scale(isRetracing ? 1.0f : hwss_mod);
+    beam.scale(isRetracing ? solveData.initialReservoir.evalUCW() : pathContribution*hwss_mod);
 
     // 間違いなく色の何かがおかしい
     // リサンプリング計算の単位?は合っている気がする
     const hwss_t Li = beam.L;
-    const float3 Lrgb =
-        max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps)) *
-        (isRetracing ? solveData.initialReservoir.evalUCW()[0] : pathContribution);
+    const float3 Lrgb = max(float3(.0f), SpectrumUtils.spectrumToRgb(Li, beam.wavelengths, beam.hwss_comps));
+     //* (isRetracing ? solveData.initialReservoir.evalUCW() : pathContribution);
 
     if (all(isfinite(Lrgb)))
         solveData.Lrgb += Lrgb;
@@ -231,15 +230,16 @@ bool initialResampling(
     // else
     //     hwss_mod *= 1.f / float(beam.hwss_comps);
 
-
     const hwss_t Li = beam.L;
-    const float luminance = SpectrumUtils.luminance(Li, beam.wavelengths);
+    // const float luminance = SpectrumUtils.luminance(Li, beam.wavelengths);
+    const float luminance = Li[0];
     // Apply hwss mis weight
     beam.scale(hwss_mod);
 
     // Lin Style Resampling Weight: mi(xi) * p_hat(xi) * UCW_{xi}
     // In initial Resampling, mi is NEE/BSDF MIS weight, p_hat is the rendering-eq value F, UCW is just the path PDF.
-    const float wi = seed.RMISWeight * SpectrumUtils.luminance(beam.L, beam.wavelengths) * pathContribution;
+    // const float wi = seed.RMISWeight * SpectrumUtils.luminance(beam.L, beam.wavelengths) * pathContribution;
+    const float wi = seed.RMISWeight * beam.L[0] * pathContribution;
 
     const bool accept = solveData.initialReservoir.update(wi, seed, luminance, sampleNext1D(solveData.sg));
 

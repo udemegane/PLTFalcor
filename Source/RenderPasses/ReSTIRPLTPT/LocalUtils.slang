@@ -31,64 +31,67 @@ void decodeMortonCode(const uint code, out uint2 pixel)
 // typealias reserver_padding = vector<float, pad_size>;
 struct PackedReservoir
 {
-    // 64,68,72,76B
-#if HWSS_SAMPLES == 1
-    // 4B
-    float L;
-    float W;
-#endif
-#if HWSS_SAMPLES == 2
-    float2 L;
-    float2 W;
-    // TODO: padding
-#endif
-#if HWSS_SAMPLES == 3
-    float3 L;
-    float3 W;
-    uint _padding;
-#endif
-#if HWSS_SAMPLES == 4
-    float4 L;
-    float4 W;
-    uint2 _padding;
-#endif
+    float luminance; // 4B
+    float w_sum;     // 4B
+    float _pad;
+    //     // 64,68,72,76B
+// #if HWSS_SAMPLES == 1
+//     // 4B
+//     float L;
+//     float W;
+// #endif
+// #if HWSS_SAMPLES == 2
+//     float2 L;
+//     float2 W;
+//     // TODO: padding
+// #endif
+// #if HWSS_SAMPLES == 3
+//     float3 L;
+//     float3 W;
+//     uint _padding;
+// #endif
+// #if HWSS_SAMPLES == 4
+//     float4 L;
+//     float4 W;
+//     uint2 _padding;
+// #endif
     // 60 ~ 72B
     // float M;                        // 4B
-    float w_sum;                    // 4B
     PackedPathReconstructionData s; // 52,56,60,64B
 
     __init(Reservoir r)
     {
         w_sum = r.w_sum;
-
-#if HWSS_SAMPLES == 1
-        L = r.p_hat[0];
-        W = r.W[0];
-#endif
-#if HWSS_SAMPLES == 2
-        L[0] = r.p_hat[0];
-        L[1] = r.p_hat[1];
-        W[0] = r.W[0];
-        W[1] = r.W[1];
-#endif
-#if HWSS_SAMPLES == 3
-        L[0] = r.p_hat[0];
-        L[1] = r.p_hat[1];
-        L[2] = r.p_hat[2];
-        W[0] = r.W[0];
-        W[1] = r.W[1];
-        W[2] = r.W[2];
-#endif
-#if HWSS_SAMPLES == 4
-        L[0] = r.p_hat[0];
-        L[1] = r.p_hat[1];
-        L[2] = r.p_hat[2];
-        L[3] = r.p_hat[3];
-        W[0] = r.W[0];
-        W[1] = r.W[1];
-        W[2] = r.W[2];
-        W[3] = r.W[3];
-#endif
+        luminance = r.p_hat;
+        _pad = 0.0f;
+// #if HWSS_SAMPLES == 1
+//         L = r.p_hat[0];
+//         W = r.W[0];
+// #endif
+// #if HWSS_SAMPLES == 2
+//         L[0] = r.p_hat[0];
+//         L[1] = r.p_hat[1];
+//         W[0] = r.W[0];
+//         W[1] = r.W[1];
+// #endif
+// #if HWSS_SAMPLES == 3
+//         L[0] = r.p_hat[0];
+//         L[1] = r.p_hat[1];
+//         L[2] = r.p_hat[2];
+//         W[0] = r.W[0];
+//         W[1] = r.W[1];
+//         W[2] = r.W[2];
+// #endif
+// #if HWSS_SAMPLES == 4
+//         L[0] = r.p_hat[0];
+//         L[1] = r.p_hat[1];
+//         L[2] = r.p_hat[2];
+//         L[3] = r.p_hat[3];
+//         W[0] = r.W[0];
+//         W[1] = r.W[1];
+//         W[2] = r.W[2];
+//         W[3] = r.W[3];
+// #endif
         s = PackedPathReconstructionData(r.s);
         s.packedComponents.y |= (max(r.M, 0b00000000000000000000000011111111) << 24) & (uint)PackedComponentsMask::M;
         // rmisWeight = r.s.RMISWeight;
@@ -97,36 +100,38 @@ struct PackedReservoir
     {
         Reservoir r;
         r.w_sum = w_sum;
-        r.W = W; // TODO:
-        r.p_hat = hwss_t(0.0f);
-#if HWSS_SAMPLES == 1
-        r.p_hat[0] = L;
-        r.W[0] = W;
-#endif
-#if HWSS_SAMPLES == 2
-        r.p_hat[0] = L[0];
-        r.p_hat[1] = L[1];
-        r.W[0] = W[0];
-        r.W[1] = W[1];
-#endif
-#if HWSS_SAMPLES == 3
-        r.p_hat[0] = L[0];
-        r.p_hat[1] = L[1];
-        r.p_hat[2] = L[2];
-        r.W[0] = W[0];
-        r.W[1] = W[1];
-        r.W[2] = W[2];
-#endif
-#if HWSS_SAMPLES == 4
-        r.p_hat[0] = L[0];
-        r.p_hat[1] = L[1];
-        r.p_hat[2] = L[2];
-        r.p_hat[3] = L[3];
-        r.W[0] = W[0];
-        r.W[1] = W[1];
-        r.W[2] = W[2];
-        r.W[3] = W[3];
-#endif
+        // r.W = W; // TODO:
+        r.p_hat = luminance;
+
+//         r.p_hat = hwss_t(0.0f);
+// #if HWSS_SAMPLES == 1
+//         r.p_hat[0] = L;
+//         r.W[0] = W;
+// #endif
+// #if HWSS_SAMPLES == 2
+//         r.p_hat[0] = L[0];
+//         r.p_hat[1] = L[1];
+//         r.W[0] = W[0];
+//         r.W[1] = W[1];
+// #endif
+// #if HWSS_SAMPLES == 3
+//         r.p_hat[0] = L[0];
+//         r.p_hat[1] = L[1];
+//         r.p_hat[2] = L[2];
+//         r.W[0] = W[0];
+//         r.W[1] = W[1];
+//         r.W[2] = W[2];
+// #endif
+// #if HWSS_SAMPLES == 4
+//         r.p_hat[0] = L[0];
+//         r.p_hat[1] = L[1];
+//         r.p_hat[2] = L[2];
+//         r.p_hat[3] = L[3];
+//         r.W[0] = W[0];
+//         r.W[1] = W[1];
+//         r.W[2] = W[2];
+//         r.W[3] = W[3];
+// #endif
         r.s = s.unpack();
         r.M = (s.packedComponents.y & (uint)PackedComponentsMask::M) >> 24;
         r.s.RMISWeight = 1.0f; // Currently, only NEE resampling is supported, so RMISWeight is always 1.0f
